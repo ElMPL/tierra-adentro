@@ -1,0 +1,38 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "ta1": {
+      ".read": true,
+      "anfi": {
+        ".write": true
+      },
+      "gente": {
+        "$id": {
+          ".write": true,
+          ".validate": "newData.hasChildren(['n', 't'])"
+        }
+      },
+      "h": {
+        "$k": {
+          ".write": true,
+          ".validate": "newData.hasChildren(['d', 't', 'm']) && newData.child('m').isString() && newData.child('m').val().length < 50000"
+        }
+      },
+      "j": {
+        "$id": {
+          ".write": true,
+          "$k": {
+            ".validate": "newData.isString() && newData.val().length < 200000"
+          }
+        }
+      },
+      "f": {
+        "$id": {
+          ".write": true,
+          ".validate": "newData.isString() && newData.val().length < 100000"
+        }
+      }
+    }
+  }
+}

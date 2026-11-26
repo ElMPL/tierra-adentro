@@ -8,7 +8,7 @@ import {REG, ORDEN, RELIQUIAS, PUEBLOS, GUARIDAS, SALA, NORTE, SUR, LUGARES} fro
 import {esNoche} from '../shared/sim.js';
 import {Misiones, MIS} from './misiones.js';
 import {ctl, botones} from './controles.js';
-import {direccion} from './red.js';
+import {via} from './red.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -82,15 +82,21 @@ export class UI {
     $('#go').onclick = () => { const n = ($('#nom').value || '').replace(/[<>&"'`\\]/g, '').trim().slice(0, 16) || CHARS[sel].n; const p = this.nuevoPerfil(sel, n); this.datos.perfiles.push(p); this.guardar(); audio.play('ok'); this.modo(p); };
   }
   async modo(p) {
-    const dir = direccion();
+    const v = via(), nube = v === 'nube' || v === 'prueba';
     const e = this.show('modo', `<div class="scr panel" id="modo"><h2>¿Dónde jugás, ${esc(p.nombre)}?</h2>
-      <button class="op" data-m="online" ${dir ? '' : 'disabled'}><b>En el mundo compartido</b><span id="est">${dir ? 'Buscando el mundo…' : 'Todavía no hay un servidor publicado.'}</span></button>
+      <button class="op" data-m="online" ${v ? '' : 'disabled'}><b>En el mundo compartido</b><span id="est">${v ? 'Buscando el mundo…' : 'Todavía no hay un mundo compartido publicado.'}</span></button>
       <button class="op" data-m="solo"><b>Solo, sin internet</b><span>El mismo mundo, pero solo para vos. Tu personaje es el mismo en los dos.</span></button>
       <button class="btn sec" data-m="vol">Volver</button></div>`);
     let vivo = true; e.onclick = async ev => { const m = ev.target.closest('button')?.dataset.m; if (!m) return; vivo = false; audio.play('ok'); if (m === 'vol') return this.inicio(); if (m === 'solo') return this.jugar(p, 'solo');
-      $('#est').textContent = 'Conectando… si el mundo estaba dormido puede tardar hasta un minuto.'; e.querySelectorAll('button').forEach(b => b.disabled = true);
-      this.red.salud(65000).then(() => {}); const ok = await this.jugar(p, 'online'); if (!ok) { this.toast(this.red.lleno ? 'El mundo está lleno. Probá en un rato.' : 'No se pudo conectar. Podés jugar solo mientras tanto.', null, 4); this.modo(p); } };
-    if (dir) { const s = await this.red.salud(); if (!vivo) return; const est = $('#est'); if (est) est.textContent = s ? `Prendido · ${s.jugadores} ${s.jugadores === 1 ? 'persona jugando' : 'personas jugando'}` : 'Está dormido o apagado. Tocá para despertarlo (tarda hasta un minuto).'; }
+      $('#est').textContent = nube ? 'Conectando…' : 'Conectando… si el mundo estaba dormido puede tardar hasta un minuto.'; e.querySelectorAll('button').forEach(b => b.disabled = true);
+      if (!nube) this.red.salud(65000).then(() => {});
+      const ok = await this.jugar(p, 'online'); if (!ok) { this.toast(this.red.lleno ? 'El mundo está lleno. Probá en un rato.' : nube ? 'No se pudo llegar al mundo. Revisá la conexión a internet; mientras tanto podés jugar solo.' : 'No se pudo conectar. Podés jugar solo mientras tanto.', null, 5); this.modo(p); } };
+    if (v) {
+      const s = await this.red.salud(); if (!vivo) return; const est = $('#est'); if (!est) return;
+      const gente = n => `${n} ${n === 1 ? 'persona jugando' : 'personas jugando'}`;
+      if (nube) est.textContent = !s ? 'No se pudo llegar al mundo. ¿Hay internet?' : s.jugadores >= s.max ? `Lleno · ${gente(s.jugadores)}` : s.jugadores ? `Abierto · ${gente(s.jugadores)}` : 'Abierto · no hay nadie ahora, ¡entrá primero!';
+      else est.textContent = s ? `Prendido · ${gente(s.jugadores)}` : 'Está dormido o apagado. Tocá para despertarlo (tarda hasta un minuto).';
+    }
   }
   async jugar(p, modo) {
     this.perfil = p; p.ult = Date.now(); const hola = {n: p.nombre, ch: p.ch, lv: p.lv, hp: 1, x: p.pos?.x ?? REG.pampa.pueblo.x, z: p.pos?.z ?? REG.pampa.pueblo.z};

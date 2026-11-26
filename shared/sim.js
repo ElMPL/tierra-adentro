@@ -33,7 +33,7 @@ export class Mundo {
         p.n = txt(m.n, 16) || 'Gaucho'; p.ch = CHARS[m.ch] ? m.ch : 'gaucho'; p.lv = num(m.lv, 1, 30, 1) | 0;
         p.x = num(m.x, -500, 500); p.z = num(m.z, -620, 620); p.hp = num(m.hp, 0, 1, 1); p.vivo = p.hp > 0; p.listo = true;
         this.envia(id, {t: 'bien', id, hora: this.hora(), dia: DIA, j: this.lista()});
-        this.todos({t: 'entra', id, n: p.n, ch: p.ch, lv: p.lv}, id); break;
+        if (!m.re) this.todos({t: 'entra', id, n: p.n, ch: p.ch, lv: p.lv}, id); break; // re: vuelve a presentarse (cambió el anfitrión o se cortó)
       }
       case 'p': p.x = num(m.x, -500, 500, p.x); p.z = num(m.z, -620, 620, p.z); p.ry = num(m.ry, -10, 10); p.mv = num(m.mv, 0, 1); p.at = num(m.at, 0, 1);
         p.hp = num(m.hp, 0, 1, p.hp); p.lv = num(m.lv, 1, 30, p.lv) | 0; p.d = m.d ? 1 : 0; p.es = m.es ? 1 : 0; p.fu = m.fu ? 1 : 0;

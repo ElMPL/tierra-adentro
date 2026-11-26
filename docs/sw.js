@@ -1,6 +1,6 @@
 // Guarda Tierra Adentro en el celular para jugar sin internet y lo actualiza solo.
-// La versión (81172fb3dc) cambia en cada compilación: eso hace que el navegador baje la nueva.
-const V = '81172fb3dc', C = 'ta-' + V, FILES = ['./game.js?v=' + V, './app.js?v=' + V];
+// La versión (4b92272d1f) cambia en cada compilación: eso hace que el navegador baje la nueva.
+const V = '4b92272d1f', C = 'ta-' + V, FILES = ['./game.js?v=' + V, './app.js?v=' + V];
 const FONTS = /(^|\.)fonts\.(googleapis|gstatic)\.com$/;
 
 self.addEventListener('install', e => e.waitUntil((async () => {
