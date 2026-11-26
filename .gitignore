@@ -1,0 +1,5 @@
+node_modules/
+android/build/
+out/
+*.p12
+*.jks

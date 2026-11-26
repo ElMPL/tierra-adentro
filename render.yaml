@@ -1,0 +1,11 @@
+# Servidor del mundo compartido en Render (plan gratis).
+# Render > New > Blueprint > elegir este repo. No hace falta compilar nada: el servidor no usa paquetes de afuera.
+services:
+  - type: web
+    name: tierra-adentro
+    runtime: node
+    plan: free
+    buildCommand: echo "Sin dependencias"
+    startCommand: node server/server.js
+    healthCheckPath: /salud
+    autoDeploy: true

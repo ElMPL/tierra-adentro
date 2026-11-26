@@ -1,0 +1,39 @@
+name: APK
+# Cada cambio en android/ compila un APK nuevo y lo publica como versión.
+# Las apps instaladas lo detectan al abrirse y ofrecen actualizar.
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', '.github/workflows/apk.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Compilar y firmar
+        env:
+          APK: tierra-adentro.apk
+          VC: ${{ github.run_number }}
+          KS_B64: ${{ secrets.KS_B64 }}
+          KS_PASS: ${{ secrets.KS_PASS }}
+        run: bash android/build.sh
+      - name: Publicar versión
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ github.run_number }}" out/tierra-adentro.apk \
+            --target "${{ github.sha }}" --title "App v${{ github.run_number }}" --latest \
+            --notes "Instalá o actualizá la app de Android con el archivo tierra-adentro.apk de abajo."
