@@ -3,3 +3,4 @@ android/build/
 out/
 *.p12
 *.jks
+artefacto/

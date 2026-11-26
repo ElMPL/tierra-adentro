@@ -27,3 +27,8 @@ fs.writeFileSync('docs/index.html', '<!doctype html>\n<html lang="es"><head><met
 fs.writeFileSync('docs/version.json', JSON.stringify({v, fecha: new Date().toISOString()}) + '\n');
 fs.writeFileSync('docs/.nojekyll', '');
 console.log('docs/ versión ' + v + ' · ' + (js.length / 1024 | 0) + ' KB');
+
+// 3) versión de prueba para un enlace privado de Claude: sin service worker ni app.js (ahí no funcionan) y siempre sin servidor
+fs.rmSync('artefacto', {recursive: true, force: true}); fs.mkdirSync('artefacto');
+fs.writeFileSync('artefacto/game.js', js);
+fs.writeFileSync('artefacto/tierra-adentro.html', '<title>Tierra Adentro</title>\n<style>[hidden]{display:none!important}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#140d20}</style>\n' + body + '\n<script src="game.js"></script>\n');

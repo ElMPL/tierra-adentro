@@ -13,7 +13,7 @@ function boot() {
   const cv = $('#c'); let renderer;
   try { renderer = new THREE.WebGLRenderer({canvas: cv, antialias: false, powerPreference: 'high-performance'}); } catch (e) { $('#boot').textContent = 'Tu navegador no pudo iniciar los gráficos 3D. Activá la aceleración por hardware y recargá.'; return; }
   let cfgq = 'media'; try { cfgq = JSON.parse(localStorage.getItem('tierra-adentro') || '{}').cfg?.q || 'media'; } catch (e) { }
-  if (!localStorage.getItem('tierra-adentro') && (/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent))) cfgq = 'baja';
+  try { if (!localStorage.getItem('tierra-adentro') && (/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent))) cfgq = 'baja'; } catch (e) { if (/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) cfgq = 'baja'; }
   renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.12; renderer.shadowMap.enabled = cfgq !== 'baja'; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(40, 1, .5, 420);
   const mundo = new Mundo3D(scene, cfgq);

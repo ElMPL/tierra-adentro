@@ -5,8 +5,8 @@ import {Mundo} from '../shared/sim.js';
 export const SERVIDOR = '';
 export function direccion() {
   const h = location.hostname;
-  // abierto desde el propio servidor (o en la compu, para probar): se conecta ahí mismo
-  if (location.protocol.startsWith('http') && h && !h.endsWith('github.io')) return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+  // abierto desde el propio servidor (Render) o en la compu para probar: se conecta ahí mismo
+  if (location.protocol.startsWith('http') && (/^(localhost|127\.|192\.168\.|10\.)/.test(h) || h.endsWith('.onrender.com'))) return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
   return SERVIDOR;
 }
 const httpDe = ws => ws.replace(/^ws/, 'http').replace(/\/ws$/, '');

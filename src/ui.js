@@ -68,7 +68,7 @@ export class UI {
   lista() {
     const P = this.datos.perfiles;
     const e = this.show('lista', `<div class="scr panel" id="lista"><h2>Mis personajes</h2><div class="cartas">${P.map((p, i) => `<div class="carta"><img alt="" src="${this.icon('h_' + p.ch)}"><b>${esc(p.nombre)}</b><span>${CHARS[p.ch].t} · nivel ${p.lv}</span><span>${Object.keys(p.reliq).length} de 8 reliquias</span><button class="btn" data-j="${i}">Jugar</button><button class="lnk" data-b="${i}">Borrar</button></div>`).join('')}</div><button class="btn sec" data-v>Volver</button></div>`);
-    e.onclick = ev => { const b = ev.target.closest('button'); if (!b) return; if (b.dataset.j) this.modo(P[+b.dataset.j]); if (b.dataset.b) { const p = P[+b.dataset.b]; if (confirm(`¿Borrar a ${p.nombre} (nivel ${p.lv})? No se puede deshacer.`)) { P.splice(+b.dataset.b, 1); this.guardar(); P.length ? this.lista() : this.inicio(); } } if (b.dataset.v !== undefined) this.inicio(); };
+    e.onclick = ev => { const b = ev.target.closest('button'); if (!b) return; if (b.dataset.j) this.modo(P[+b.dataset.j]); if (b.dataset.b) { if (!b.dataset.ok) { b.dataset.ok = 1; b.textContent = '¿Seguro? Tocá otra vez para borrarlo'; return; } P.splice(+b.dataset.b, 1); this.guardar(); P.length ? this.lista() : this.inicio(); } if (b.dataset.v !== undefined) this.inicio(); };
   }
   crear() {
     const ks = Object.keys(KITS); let sel = this.sel || 'gaucho';
