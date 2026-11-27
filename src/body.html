@@ -83,7 +83,9 @@ body.tactil #doma small{display:none}
 .logro{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.08)}.logro span{color:var(--hueso2);font-size:13px;text-align:right}
 #cartel{position:absolute;left:50%;top:24%;transform:translateX(-50%);text-align:center;opacity:0;pointer-events:none;width:90vw}
 #cartel h2{font-size:clamp(40px,7vw,80px);text-shadow:0 3px 0 #5a0a18,0 8px 30px rgba(0,0,0,.8)}#cartel p{margin:6px 0 0;font-size:18px;color:var(--sol);text-shadow:0 2px 6px #000}
-#cartel.ver{animation:cartel 3.6s ease forwards}@keyframes cartel{0%{opacity:0;transform:translate(-50%,10px)}12%,75%{opacity:1;transform:translate(-50%,0)}100%{opacity:0}}
+#cartel.ver{animation:cartel 3.6s ease forwards}
+#parajeC{position:absolute;left:50%;top:15%;transform:translateX(-50%);text-align:center;opacity:0;pointer-events:none;width:90vw;font-family:var(--disp);font-size:clamp(20px,3vw,30px);color:#f3e6c8;text-shadow:0 2px 0 #3a0a18,0 4px 18px rgba(0,0,0,.8)}#parajeC small{display:block;font-family:inherit;font-size:14px;color:var(--sol)}#parajeC.ver{animation:cartel 3s ease forwards}
+.escena .caja{max-width:620px}.escena p{font-size:18px;line-height:1.5;font-style:italic}.forastero .quien img{background:rgba(120,10,20,.35)}.diario h3{margin:14px 0 4px}.diario p{margin:4px 0;line-height:1.4}@keyframes cartel{0%{opacity:0;transform:translate(-50%,10px)}12%,75%{opacity:1;transform:translate(-50%,0)}100%{opacity:0}}
 #habs{position:absolute;left:50%;bottom:max(12px,var(--sa-b));transform:translateX(-50%);display:flex;gap:6px}
 .hab{position:relative;width:58px;height:58px;border-radius:12px;background:rgba(14,8,22,.75);border:2px solid rgba(243,230,200,.3);overflow:hidden;touch-action:none}
 .hab img{width:100%;height:100%;padding:4px;pointer-events:none}.hab i{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.65);pointer-events:none}
@@ -142,7 +144,7 @@ body.tactil #chatlog{bottom:calc(max(14px,var(--sa-b)) + 130px)}
  <div id="doma" hidden><b>¡Aguantá al bagual!</b><div class="eq"><i></i></div><div class="tiempo"><i></i></div><small>Usá ← → (A y D, o el joystick) para no caerte</small></div>
  <div id="pesca" hidden><b>Pescando</b><div class="rio"><i class="zona"></i><i class="pez"></i></div><div class="tiempo"><i></i></div><small></small></div>
  <div id="jefeb" hidden><b></b><span></span><div class="barra"><i></i></div></div>
- <div id="cartel"></div>
+ <div id="cartel"></div><div id="parajeC"></div>
  <div id="habs"></div>
  <button id="usar" data-b="usar" hidden></button>
  <div id="menu"><button id="bcam" data-b="cam" aria-label="Cambiar cámara (V)" title="Cambiar cámara (V)">👁</button><button id="bprog" aria-label="Progreso (P)" title="Progreso: mañas, monturas y logros (P)">⭐<i hidden></i></button><button id="bmapa" aria-label="Mapa (M)" title="Mapa (M)">🗺</button><button id="binv" aria-label="Inventario (I)" title="Inventario (I)">🎒</button><button id="bmis" aria-label="Misiones (L)" title="Misiones (L)">📜</button><button id="bchat" aria-label="Chat (Enter)" title="Chat (Enter)">💬</button><button id="bop" aria-label="Opciones (Esc)" title="Opciones (Esc)">⚙</button></div>

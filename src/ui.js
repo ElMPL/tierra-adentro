@@ -4,9 +4,10 @@ import {HEROES, FOES, OBJ, MISC, model} from '../lib/models.js';
 import {audio} from '../lib/audio.js';
 import {WEAPONS} from '../lib/data.js';
 import {KITS, DESBLOQUEO, CHARS, ENEMIES, BOSSES, OBJETOS, AMULETOS, RELIQ, GRADOS, costoMejora, xpSig, NIVEL_MAX} from '../shared/reglas.js';
-import {REG, ORDEN, RELIQUIAS, PUEBLOS, GUARIDAS, SALA, NORTE, SUR, LUGARES, MAPA_V} from '../shared/mapa.js';
+import {REG, ORDEN, RELIQUIAS, PUEBLOS, GUARIDAS, SALA, NORTE, SUR, LUGARES, MAPA_V, alto, PARAJES, relieve, GR} from '../shared/mapa.js';
 import {esNoche} from '../shared/sim.js';
-import {Misiones, MIS} from './misiones.js';
+import {Misiones, MIS, CAPS, TRATOS} from './misiones.js';
+import {NOMBRE_FORASTERO} from './historia.js';
 import {ctl, botones} from './controles.js';
 import {via} from './red.js';
 import {RES} from './mundo3d.js';
@@ -27,7 +28,7 @@ function hacerIconos() {
   const S = 128, r = new THREE.WebGLRenderer({alpha: true, antialias: true, preserveDrawingBuffer: true}); r.setSize(S, S); r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.25;
   const sc = new THREE.Scene(), cam = new THREE.PerspectiveCamera(28, 1, .1, 100); sc.add(new THREE.HemisphereLight(0xfff2e0, 0x6a5070, 1.6)); const d = new THREE.DirectionalLight(0xffffff, 2.6); d.position.set(2, 4, 5); sc.add(d); const d2 = new THREE.DirectionalLight(0x9ac0ff, 1.6); d2.position.set(-4, 2, -3); sc.add(d2);
   const shot = (geo, ry = 0, view) => {
-    const or = U.uRim.value.clone(); U.uRim.value.setRGB(.8, .8, 1); const b = new Batch(sc, geo, 1, {shadow: false, recv: false}); b.begin(); b.push(0, 0, 0, ry, 1, .4, 0, 0); b.end();
+    const or = U.uRim.value.clone(); U.uRim.value.setRGB(.8, .8, 1); const b = new Batch(sc, geo, 1, {shadow: false, recv: false, abs: true}); b.begin(); b.push(0, 0, 0, ry, 1, .4, 0, 0); b.end();
     const bb = geo.boundingBox, c = bb.getCenter(new THREE.Vector3()), sz = bb.getSize(new THREE.Vector3()); let R = sz.length() / 2;
     if (view === 'head') { c.set(0, bb.max.y - sz.y * .2, 0); R = sz.y * .3; } else if (view === 'foe') { c.y = bb.min.y + sz.y * .56; R = Math.max(sz.y, Math.min(sz.x, sz.y * 1.3)) * .56; }
     if (ry && view !== 'head') { const cs = Math.cos(ry), sn = Math.sin(ry), x = c.x * cs + c.z * sn, z = -c.x * sn + c.z * cs; c.x = x; c.z = z; }
@@ -109,7 +110,7 @@ export class UI {
     this.red.cerrar(); if (modo === 'solo') this.red.solo(hola); else { const ok = await this.red.conectar(hola); if (!ok) { this.red.cerrar(); return false; } }
     this.juego.empezar(p, this.red); this.show('', ''); this.scr = 'juego'; $('#hud').hidden = false; document.body.classList.add('jugando');
     this.armarHud(); this.seguimiento();
-    if (!p.mis.h1) setTimeout(() => this.toast('Hablá con Doña Eulogia, junto al fogón del pueblo (la del signo !).', 'h_curandera', 7), 1200);
+    if (!p.mis.h1) setTimeout(() => this.toast('Hablá con Doña Eulogia, junto al fogón del pueblo (la de la estrella ★).', 'h_curandera', 7), 1200);
     this.guardar(); return true;
   }
   salir() { this.guardar(); this.red.cerrar(); this.juego.activo = false; this.cerrarPanel(); this.jefe(null); this.inicio(); }
@@ -131,13 +132,29 @@ export class UI {
     cd(bs[0], y.cdB, K.basico.cd); for (let i = 0; i < 3; i++) cd(bs[i + 1], y.cd[i], K.h[i].cd * s.cdr, p.lv < DESBLOQUEO[i] ? DESBLOQUEO[i] : 0); cd(bs[4], y.esq, y.esqMax || 1.1); bs[5].querySelector('em').textContent = p.inv.mate || 0; bs[5].classList.toggle('bloq', !(p.inv.mate > 0));
     const h = j.horaAhora(); $('#reloj').textContent = esNoche(h) ? '☾ Noche' : '☀ Día'; $('#red').textContent = this.red.modo === 'solo' ? 'Solo' : this.red.estado === 'conectado' ? `${(j.lista?.length || 1)} en el mundo` : 'Reconectando…';
   }
-  zona(R, k) { $('#zona b').textContent = R.n; $('#zona span').textContent = `Nivel ${R.lv[0]}–${R.lv[1]}`; this.cartel(R.n, k === 'salamanca' ? 'La cueva de Mandinga' : `${R.sub} · Nivel ${R.lv[0]} a ${R.lv[1]}`); }
+  zona(R, k) { this.zonaT = performance.now(); $('#zona b').textContent = R.n; $('#zona span').textContent = `Nivel ${R.lv[0]}–${R.lv[1]}`; this.cartel(R.n, k === 'salamanca' ? 'La cueva de Mandinga' : `${R.sub} · Nivel ${R.lv[0]} a ${R.lv[1]}`); }
+  paraje(pj) { $('#zona span').textContent = `${pj.n} · Nv ${pj.lv[0]}–${pj.lv[1]}`; if (pj.n === REG[pj.reg].n || PUEBLOS.some(p => p.n === pj.n && p.id === pj.reg) && this.ultParaje == null) { this.ultParaje = pj.id; return; } this.ultParaje = pj.id; if (performance.now() - (this.zonaT || 0) < 2500) return; const c = $('#parajeC'); c.innerHTML = `${esc(pj.n)}<small>Nivel ${pj.lv[0]} a ${pj.lv[1]}</small>`; c.classList.remove('ver'); void c.offsetWidth; c.classList.add('ver'); }
   cartel(t, s) { const c = $('#cartel'); c.innerHTML = `<h2>${esc(t)}</h2><p>${esc(s)}</p>`; c.classList.remove('ver'); void c.offsetWidth; c.classList.add('ver'); }
   toast(txt, ic, dur = 2.6) { const d = document.createElement('div'); d.className = 'toast'; const u = ic ? this.icon(ic) : ''; d.innerHTML = (u ? `<img alt="" src="${u}">` : '') + `<span></span>`; d.querySelector('span').textContent = txt; $('#toasts').append(d); while ($('#toasts').children.length > 4) $('#toasts').firstChild.remove(); setTimeout(() => { d.classList.add('fue'); setTimeout(() => d.remove(), 400); }, dur * 1000); }
   subeNivel(lv, h) { this.cartel('¡Nivel ' + lv + '!', h ? 'Aprendiste: ' + h.n : 'Más vida y más daño'); if (h) this.toast(`Nueva habilidad: ${h.n}. ${h.d}`, icoHab(h.ef[0]), 5); }
   jefe(m) { const b = $('#jefeb'); if (!m) { b.hidden = true; this.jefeId = null; return; } this.jefeId = m.b; b.hidden = false; b.querySelector('b').textContent = m.n; b.querySelector('span').textContent = m.sub || ''; this.cartel(m.n, m.sub || ''); }
   caido(v) { $('#caido').hidden = !v; if (v) $('#caido').innerHTML = `<h2>Caíste</h2><p>Volvés al fogón de ${esc(REG[this.perfil.fogon || 'pampa'].pueblo.n)} y perdés un poco de plata.</p><button class="btn" id="rev">Volver al fogón</button>`, $('#rev').onclick = () => this.juego.revivir(true); }
-  final() { this.cartel('¡Cerraste la Salamanca!', 'Las leyendas vuelven a ser cuentos de fogón'); this.toast('Volvé a Pueblo Ombú: Doña Eulogia te espera con un asado.', 'asado', 8); }
+  final() { const s = this.perfil.final === 'socio'; this.cartel(s ? 'La Salamanca quedó cerrada' : '¡Cerraste la Salamanca!', s ? 'Con vos de llavero, socio de Mandinga' : 'Las leyendas vuelven a ser cuentos de fogón'); this.toast('Volvé a Pueblo Ombú: Doña Eulogia te espera con un asado.', 'asado', 8); }
+  // una escena de la historia, sin nadie que hable: lo que ves
+  escena(lugar, L) { const ver = i => { const e = this.abrir('escena', `<h2>${esc(lugar)}</h2><p></p><div class="ops"><button class="btn">${i < L.length - 1 ? 'Seguir' : 'Listo'}</button></div>`, 'escena'); e.querySelector('p').textContent = L[i]; e.querySelector('.ops button').onclick = () => { audio.play('move'); if (i < L.length - 1) ver(i + 1); else this.cerrarPanel(); }; e.querySelector('.ops button').focus(); }; ver(0); }
+  // charla corta con alguien que no está en la lista de gente (el que acompañás, el forastero)
+  hablarCon(q, txt, boton = 'Seguir', ops) { const e = this.abrir('charla', `<div class="quien"><img alt="" src="${this.icon(q.ic)}"><div><b>${esc(q.nom)}</b><span>${esc(q.titulo || '')}</span></div></div><p class="dice"></p><div class="ops"></div>`, 'abajo ' + (q.cls || '')); e.querySelector('.dice').textContent = txt; const O = ops || [{t: boton, prim: 1}]; const box = e.querySelector('.ops'); O.forEach(o => { const b = document.createElement('button'); b.className = o.prim ? 'btn' : 'btn sec'; b.textContent = o.t; b.onclick = () => { audio.play('move'); const r = o.f?.(); if (r) this.hablarCon(q, r, 'Seguir'); else this.cerrarPanel(); }; box.append(b); }); box.querySelector('button')?.focus(); }
+  // el forastero de poncho negro te ofrece un trato después de cada jefe
+  forastero(reg) {
+    const p = this.perfil, j = this.juego, q = {nom: reg === 'final' ? 'Mandinga' : NOMBRE_FORASTERO, ic: 'f_mandinga', titulo: reg === 'final' ? 'sin disfraz' : 'poncho negro, espuelas de plata', cls: 'forastero'}; audio.play('wail');
+    if (reg === 'final') return this.hablarCon(q, `Usted me aceptó ${p.pactos} tratos, paisano. Ya es medio mío. Quédese de socio: la cueva queda cerrada igual… con usted de llavero.`, '', [
+      {t: 'Quedarme de socio', f: () => { p.final = 'socio'; p.oro += 3000; this.guardar(); setTimeout(() => this.final(), 400); return 'Trato hecho. Tome, para los gastos. Nos vemos en cada cruce de caminos.'; }},
+      {t: 'Romper todos los tratos', prim: 1, f: () => { p.final = 'libre'; p.oro = Math.floor(p.oro * .7); this.juego.fama(60); this.guardar(); setTimeout(() => this.final(), 400); return 'Rompió los tratos. Cuesta caro, eh: se le fue un buen pedazo de la plata. Pero usted es libre.'; }}]);
+    const T = TRATOS[reg]; if (!T || p.tratos?.[reg]) return; (p.tratos ||= {});
+    this.hablarCon(q, T.ofrece, '', [
+      {t: 'Darle la mano', f: () => { p.tratos[reg] = 'si'; p.pactos = (p.pactos || 0) + 1; const D = T.da; if (D.oro) { p.oro += D.oro; j.num(j.yo.x, j.yo.z, '+' + D.oro + ' $', '#f2c14a', 1.1); } if (D.am) p.amuletos[D.am] = (p.amuletos[D.am] || 0) + 1; for (const [k, n] of D.it || []) p.inv[k] = (p.inv[k] || 0) + n; audio.play('jackpot'); this.guardar(); return T.si; }},
+      {t: 'No hago tratos con desconocidos', prim: 1, f: () => { p.tratos[reg] = 'no'; j.fama(12); this.guardar(); return 'Se tocó el sombrero, sonrió y se fue en un remolino de polvo. Te quedó olor a azufre en la ropa.'; }}]);
+  }
   seguimiento() {
     const l = this.misiones.activas().sort((a, b) => (b.hist || 0) - (a.hist || 0)).slice(0, 3);
     if (!this.track || !l.includes(MIS[this.track])) this.track = l[0]?.id || null;
@@ -148,10 +165,10 @@ export class UI {
     const u = $('#usar'); const k = c ? (c.tipo === 'npc' ? c.ref.id : c.tipo + (c.ref.id ?? '')) : ''; if (k === this.cercaK) return; this.cercaK = k;
     if (!c) { u.hidden = true; return; } u.hidden = false;
     const t = {npc: () => `Hablar con ${this.nombreNpc(c.ref)}`, fogon: () => 'Fogón: descansar y viajar', santuario: () => 'Prenderle una vela al Gauchito', difunta: () => 'Dejarle agua a la Difunta Correa', entierro: () => 'Cavar', apacheta: () => 'Dejar una piedra en la apacheta',
-      aljibe: () => 'Tomar agua del aljibe', bagual: () => ({caballo: 'Domar al bagual', vaca: 'Jinetear la vaca', vicuna: 'Domar la vicuña'}[c.ref.k] || 'Domar'), caballo: () => `Subirte a ${this.perfil.monturas?.[c.ref.k]?.n || 'tu montura'}`, pesca: () => 'Pescar', gente: () => `Charlar con ${CHARS[c.ref.ch]?.n || 'el vecino'}`, perro: () => 'Acariciar al perro', tesoro: () => 'Cavar el entierro de la Luz Mala', carreta: () => 'Comprarle al mercachifle'}[c.tipo]();
+      aljibe: () => 'Tomar agua del aljibe', bagual: () => ({caballo: 'Domar al bagual', vaca: 'Jinetear la vaca', vicuna: 'Domar la vicuña'}[c.ref.k] || 'Domar'), caballo: () => `Subirte a ${this.perfil.monturas?.[c.ref.k]?.n || 'tu montura'}`, pesca: () => 'Pescar', gente: () => `Charlar con ${CHARS[c.ref.ch]?.n || 'el vecino'}`, perro: () => 'Acariciar al perro', tesoro: () => 'Cavar el entierro de la Luz Mala', carreta: () => 'Comprarle al mercachifle', mision: () => c.ref.que, escolta: () => 'Hablar con ' + c.ref.que}[c.tipo]();
     u.innerHTML = `<kbd>F</kbd><span>${esc(t)}</span>`;
   }
-  nombreNpc(n) { if (n.ch) return CHARS[n.ch].n; return {pulpero: 'el pulpero', herrero: 'el herrero', posta: 'el mercachifle'}[n.rol] || ROL[n.rol]; }
+  nombreNpc(n) { if (n.nom) return n.nom; if (n.ch) return CHARS[n.ch].n; return {pulpero: 'el pulpero', herrero: 'el herrero', posta: 'el mercachifle'}[n.rol] || ROL[n.rol]; }
   usar(c) {
     const j = this.juego, p = this.perfil, t = j.t; audio.play('ok');
     if (c.tipo === 'npc') return this.hablar(c.ref);
@@ -159,6 +176,7 @@ export class UI {
     if (['bagual', 'caballo', 'gente', 'perro'].includes(c.tipo)) return j.vida.usar(c);
     if (['tesoro', 'carreta'].includes(c.tipo)) return j.eventos.usar(c);
     if (c.tipo === 'pesca') return j.pesca.empezar(c.ref);
+    if (c.tipo === 'mision' || c.tipo === 'escolta') return this.misiones.usar(c);
     if (c.tipo === 'aljibe') { const k = 'aljibe' + Math.round(c.ref.x) + ',' + Math.round(c.ref.z); if ((j.lugCd[k] || -1e9) > t) { this.toast('Ya tomaste. Esperá un ratito.', 'agua', 1.5); return; } j.lugCd[k] = t + 45; j.curar(.3); audio.play('splash'); j.parts.burst(c.ref.x, 1, c.ref.z, 14, [.6, .8, 1], {sp: 3, size: .3, life: .6}); this.toast('Agua fresquita del aljibe.', 'agua', 2); return; }
     const id = c.tipo + c.ref.id; if ((j.lugCd[id] || -1e9) > t) { this.toast('Ya hiciste tu promesa acá. Volvé más tarde.', null, 2); return; }
     if (c.tipo === 'santuario') { j.lugCd[id] = t + 180; j.curar(1); j.yo.buff.santo = t + 300; this.toast('Le prendiste una vela al Gauchito Gil: +10% de daño por 5 minutos.', 'vela', 4); }
@@ -177,11 +195,11 @@ export class UI {
   abrir(id, html, cls = '') { this.cerrarPanel(); if (document.pointerLockElement) document.exitPointerLock?.(); const d = document.createElement('div'); d.className = 'modal ' + cls; d.id = id; d.innerHTML = `<div class="caja">${html}<button class="x" aria-label="Cerrar">✕</button></div>`; $('#ui').append(d); d.querySelector('.x').onclick = () => this.cerrarPanel(); d.onclick = e => { if (e.target === d) this.cerrarPanel(); }; this.panel = d; if (this.red.modo === 'solo') this.red.pausa = true; return d; }
   cerrarPanel() { if (this.panel) { this.panel.remove(); this.panel = null; } this.red.pausa = false; }
   hablar(npc) {
-    const nom = this.nombreNpc(npc), ic = npc.ch ? 'h_' + npc.ch : npc.mod?.startsWith('m_') ? npc.mod : 'h_asador';
+    const nom = this.nombreNpc(npc), ic = npc.ch ? 'h_' + npc.ch : npc.mod?.startsWith('m_') || npc.mod?.startsWith('h_') ? npc.mod : 'h_asador';
     const ver = d => {
       if (!d) return this.cerrarPanel();
       const ops = d.op || [{t: 'Seguir', f: () => this.misiones.charla(npc)}];
-      const e = this.abrir('charla', `<div class="quien"><img alt="" src="${this.icon(ic)}"><div><b>${esc(nom.replace(/^el /, 'El '))}</b><span>${ROL[npc.rol]} de ${esc(REG[npc.reg].pueblo.n)}</span></div></div><p class="dice"></p><div class="ops">${ops.map((o, i) => `<button class="${o.prim ? 'btn' : 'btn sec'}" data-i="${i}"></button>`).join('')}</div>`, 'abajo');
+      const e = this.abrir('charla', `<div class="quien"><img alt="" src="${this.icon(ic)}"><div><b>${esc(nom.replace(/^el /, 'El '))}</b><span>${esc(npc.titulo || (ROL[npc.rol] + ' de ' + REG[npc.reg].pueblo.n))}</span></div></div><p class="dice"></p><div class="ops">${ops.map((o, i) => `<button class="${o.prim ? 'btn' : 'btn sec'}" data-i="${i}"></button>`).join('')}</div>`, 'abajo');
       e.querySelector('.dice').textContent = d.txt; e.querySelectorAll('.ops button').forEach((b, i) => { b.textContent = ops[i].t; });
       e.querySelector('.ops').onclick = ev => { const b = ev.target.closest('button'); if (!b) return; audio.play('move'); const o = ops[+b.dataset.i]; if (!o.f) return this.cerrarPanel(); const r = o.f(); if (r === null) { if (this.panel?.id === 'charla') this.cerrarPanel(); return; } ver(r || null); };
       e.querySelector('.ops button')?.focus();
@@ -252,18 +270,20 @@ export class UI {
       if (b.dataset.olvidar) { if (p.oro < olvido) { this.toast('No te alcanza la plata.', 'plata', 2); return; } p.oro -= olvido; p.manas = {}; audio.play('back'); j.yo.hp = Math.min(j.yo.hp, j.stats().vida); this.guardar(); return this.progreso('manas'); }
       if (b.dataset.mo) { const k = b.dataset.mo, iba = j.yo.montado === true; if (iba) j.yo.montado = false; j.vida.mio = null; p.montura = k; if (iba) j.vida.montar(); audio.play('ok'); this.armarHud(); this.guardar(); return this.progreso('mont'); } };
   }
-  listaMis() {
-    const act = this.misiones.activas(), hechas = Object.values(MIS).filter(m => this.perfil.mis[m.id]?.e === 'hecha');
-    const e = this.abrir('mis', `<h2>Misiones</h2><div class="lst">${act.length ? act.map(m => `<button class="fila2 ${m.id === this.track ? 'on' : ''}" data-t="${m.id}"><div><b>${m.hist ? '★ ' : ''}${esc(m.n)}</b><span>${esc(this.misiones.texto(m))} · ${esc(this.misiones.destino(m).n)}</span></div></button>`).join('') : '<p class="tip">No tenés misiones. La gente de los pueblos con un ! tiene changas para vos.</p>'}</div>
+  listaMis(tab = this.tabMis || 'mis') {
+    this.tabMis = tab; const tabs = `<div class="tabs">${[['mis', 'Misiones'], ['diario', 'Diario']].map(([k, n]) => `<button class="btn ${k === tab ? '' : 'sec'}" data-tab="${k}">${n}</button>`).join('')}</div>`;
+    if (tab === 'diario') { const D = this.misiones.diario(); const e = this.abrir('mis', `<h2>Diario de ${esc(this.perfil.nombre)}</h2>${tabs}<div class="diario">${D.length ? D.map(c => `<h3>Capítulo ${c.c}: ${esc(c.n)}</h3>${c.L.map(t => `<p>${esc(t)}</p>`).join('')}`).join('') : '<p class="tip">Todavía no pasó nada que valga la pena contar. Hablá con Doña Eulogia en Pueblo Ombú.</p>'}</div>`, 'ancho'); e.onclick = ev => { const b = ev.target.closest('[data-tab]'); if (b) this.listaMis(b.dataset.tab); }; return; }
+    const act = this.misiones.activas().sort((a, b) => (b.hist || 0) - (a.hist || 0)), hechas = Object.values(MIS).filter(m => this.perfil.mis[m.id]?.e === 'hecha');
+    const e = this.abrir('mis', `<h2>Misiones</h2>${tabs}<div class="lst">${act.length ? act.map(m => `<button class="fila2 ${m.id === this.track ? 'on' : ''}" data-t="${m.id}"><div><b>${m.hist ? '★ ' : ''}${esc(m.n)}</b><span>${esc(this.misiones.texto(m))} · ${esc(this.misiones.destino(m).n)}</span></div></button>`).join('') : '<p class="tip">No tenés misiones. La gente de los pueblos con un ! tiene changas para vos.</p>'}</div>
       ${hechas.length ? `<h3>Cumplidas (${hechas.length})</h3><p class="tip">${hechas.map(m => esc(m.n)).join(' · ')}</p>` : ''}<p class="tip">Tocá una misión para seguirla: la flecha y el mapa te marcan a dónde ir.</p>`);
-    e.onclick = ev => { const b = ev.target.closest('[data-t]'); if (!b) return; this.track = b.dataset.t; this.seguimiento(); this.listaMis(); };
+    e.onclick = ev => { const tb = ev.target.closest('[data-tab]'); if (tb) return this.listaMis(tb.dataset.tab); const b = ev.target.closest('[data-t]'); if (!b) return; this.track = b.dataset.t; this.seguimiento(); this.listaMis(); };
   }
   opciones() {
     const c = this.cfg, en = !!this.juego.activo;
     const e = this.abrir('op', `<h2>Opciones</h2><label class="rng">Música <input type="range" min="0" max="1" step=".05" value="${c.mus}" data-k="mus"></label><label class="rng">Sonidos <input type="range" min="0" max="1" step=".05" value="${c.sfx}" data-k="sfx"></label>
       <label class="rng">Cámara <select data-k="vista">${[['arriba', 'Desde arriba'], ['atras', 'Desde atrás'], ['fp', 'Primera persona']].map(([v, n]) => `<option value="${v}" ${(this.juego.vista || c.vista) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       <label class="rng">Gráficos <select data-k="q">${['baja', 'media', 'alta'].map(q => `<option value="${q}" ${c.q === q ? 'selected' : ''}>${q[0].toUpperCase() + q.slice(1)}</option>`).join('')}</select></label>
-      <h3>Controles</h3><p class="tip">Compu: WASD para moverte, el mouse apunta, clic ataca, Q E R habilidades, Espacio esquiva, H toma mate, F habla, G llama o baja de la montura (Espacio usa su habilidad), V cambia la cámara, P progreso (mañas, monturas y logros), M mapa, I inventario, L misiones, Enter chat. En primera persona y desde atrás, hacé clic para mirar con el mouse (Esc lo suelta).<br>Celular: joystick a la izquierda y botones a la derecha; con la cámara de atrás o en primera persona, arrastrá el dedo en la mitad derecha para mirar. Joystick de consola: A ataca, X / RB / RT habilidades, B esquiva, Y habla, palanca derecha mira, apretar la izquierda llama al caballo y la derecha cambia la cámara.</p>
+      <h3>Controles</h3><p class="tip">Compu: WASD para moverte, el mouse apunta, clic ataca, Q E R habilidades, Espacio esquiva, H toma mate, F habla, G llama o baja de la montura (Espacio usa su habilidad), V cambia la cámara, P progreso (mañas, monturas y logros), M mapa, I inventario, L misiones y diario, Enter chat. En primera persona y desde atrás, hacé clic para mirar con el mouse (Esc lo suelta).<br>Celular: joystick a la izquierda y botones a la derecha; con la cámara de atrás o en primera persona, arrastrá el dedo en la mitad derecha para mirar. Joystick de consola: A ataca, X / RB / RT habilidades, B esquiva, Y habla, palanca derecha mira, apretar la izquierda llama al caballo y la derecha cambia la cámara.</p>
       ${en ? '<button class="btn sec" data-a="salir">Guardar y salir al inicio</button>' : ''}`);
     e.oninput = ev => { const k = ev.target.dataset.k; if (!k) return; if (k === 'vista') { c.vista = ev.target.value; if (this.juego.activo) this.juego.cambiarVista(c.vista); this.guardar(); return; } c[k] = k === 'q' ? ev.target.value : +ev.target.value; audio.vol.m = c.mus; audio.vol.s = c.sfx; this.guardar(); if (k === 'q') this.toast('Se aplica la próxima vez que abras el juego.', null, 3); };
     e.onclick = ev => { if (ev.target.dataset?.a === 'salir') this.salir(); };
@@ -272,18 +292,21 @@ export class UI {
   chat(m) { const d = document.createElement('p'); const b = document.createElement('b'); b.textContent = m.n + ': '; d.append(b, document.createTextNode(m.m)); $('#chatlog').append(d); while ($('#chatlog').children.length > 6) $('#chatlog').firstChild.remove(); setTimeout(() => d.classList.add('fue'), 15000); audio.play('pick'); }
   // ---------- mapa ----------
   imgMapa() {
-    const M = this.mundo, W = M.dA ? Math.round(M.uS?.x) : 0; const TW = this.mundo.u.uS.value.x / RES, TH = this.mundo.u.uS.value.y / RES; const c = document.createElement('canvas'); c.width = TW; c.height = TH; const x = c.getContext('2d'), im = x.createImageData(TW, TH);
-    for (let i = 0; i < TW * TH; i++) { const o = i * 4, a = M.dA, b = M.dB; let r = a[o], g = a[o + 1], bl = a[o + 2]; if (b[o + 3] > 30) { r = 50; g = 100; bl = 160; } else if (a[o + 3] > 110) { r = 170; g = 140; bl = 100; } const out = M.dC[o] > 200; im.data[o] = r * (out ? .6 : 1); im.data[o + 1] = g * (out ? .6 : 1); im.data[o + 2] = bl * (out ? .6 : 1); im.data[o + 3] = 255; }
+    const M = this.mundo, W = M.dA ? Math.round(M.uS?.x) : 0; const TW = this.mundo.u.uS.value.x / RES, TH = this.mundo.u.uS.value.y / RES; const RV = relieve(); const c = document.createElement('canvas'); c.width = TW; c.height = TH; const x = c.getContext('2d'), im = x.createImageData(TW, TH);
+    for (let i = 0; i < TW * TH; i++) { const o = i * 4, a = M.dA, b = M.dB; let r = a[o], g = a[o + 1], bl = a[o + 2]; if (b[o + 3] > 30) { r = 50; g = 100; bl = 160; } else if (a[o + 3] > 110) { r = 170; g = 140; bl = 100; } const out = M.dC[o] > 200; const A = RV.ALT, w = GR.w, sh = i % w > 0 && i % w < w - 1 && i > w && i < A.length - w ? clamp(1 + (A[i - 1] - A[i + 1] + A[i - w] - A[i + w]) * .22, .55, 1.45) : 1, hk = (out ? .6 : 1) * sh * (1 + clamp(A[i], 0, 20) * .012); im.data[o] = r * hk; im.data[o + 1] = g * hk; im.data[o + 2] = bl * hk; im.data[o + 3] = 255; }
     x.putImageData(im, 0, 0); this.mapaC = c; this.mapaO = {x: this.mundo.u.uO.value.x, z: this.mundo.u.uO.value.y, k: RES};
   }
   mapa() {
-    const e = this.abrir('mapa', `<h2>Mapa</h2><canvas id="mapac"></canvas><p class="tip">★ tu misión · ☠ jefes · ⌂ pueblos (los que conocés, en blanco) · lo oscuro todavía no lo recorriste (${this.juego.vistoB ? Math.floor(explorado(this.juego.vistoB)) : 0}% explorado)</p>`, 'ancho');
+    const e = this.abrir('mapa', `<h2>Mapa</h2><canvas id="mapac"></canvas><p class="tip">★ amarilla: tu misión · ★ naranja: sigue la historia · ! changas · ? para entregar · ☠ jefes · ⌂ pueblos · lo oscuro todavía no lo recorriste (${this.juego.vistoB ? Math.floor(explorado(this.juego.vistoB)) : 0}% explorado)</p>`, 'ancho');
     const cv = e.querySelector('#mapac'), j = this.juego, p = this.perfil, O = this.mapaO; const W = Math.min(innerWidth - 60, 900), H = Math.min(innerHeight - 190, W * 1.25); const k = Math.min(W / this.mapaC.width, H / this.mapaC.height);
     cv.width = this.mapaC.width * k * devicePixelRatio; cv.height = this.mapaC.height * k * devicePixelRatio; cv.style.width = this.mapaC.width * k + 'px'; cv.style.height = this.mapaC.height * k + 'px';
     const x = cv.getContext('2d'), S = k * devicePixelRatio / O.k, P = (wx, wz) => [(wx - O.x) * S, (wz - O.z) * S]; x.imageSmoothingEnabled = true; x.drawImage(this.mapaC, 0, 0, cv.width, cv.height);
     const vb = j.vistoB; if (vb) { const E = EXPLORA; x.fillStyle = 'rgba(14,8,22,.74)'; for (let jj = 0; jj < E.FILAS; jj++) for (let ii = 0; ii < E.COLS; ii++) { if (visto(vb, jj * E.COLS + ii)) continue; const [a, b] = P(E.X0 + ii * E.CX, E.Z0 + jj * E.CX), [c, d] = P(E.X0 + (ii + 1) * E.CX, E.Z0 + (jj + 1) * E.CX); x.fillRect(Math.round(a), Math.round(b), Math.round(c) - Math.round(a), Math.round(d) - Math.round(b)); } }
     x.font = `${13 * devicePixelRatio}px "Alegreya Sans",sans-serif`; x.textAlign = 'center';
     for (const r of ORDEN) { const [a, b] = P(...REG[r].c); x.fillStyle = 'rgba(20,10,20,.55)'; x.fillText(REG[r].n, a + 1, b + 1 - 14 * devicePixelRatio); x.fillStyle = '#f3e6c8'; x.fillText(REG[r].n, a, b - 14 * devicePixelRatio); }
+    x.font = `italic ${11 * devicePixelRatio}px "Alegreya Sans",sans-serif`; for (const pj of PARAJES) { if (!p.parajes?.[pj.id] || PUEBLOS.some(q => q.n === pj.n) || GUARIDAS.some(g => g.n === pj.n)) continue; const [a, b] = P(pj.x, pj.z); x.fillStyle = 'rgba(20,10,20,.5)'; x.fillText(pj.n, a + 1, b + 1); x.fillStyle = '#e8dcc0'; x.fillText(pj.n, a, b); }
+    for (const n of j.npcs) { const mk = n.rol === 'pulpero' || n.rol === 'herrero' || n.rol === 'posta' ? '' : this.misiones.marca(n); if (!mk) continue; const [a, b] = P(n.x, n.z); x.font = `800 ${15 * devicePixelRatio}px sans-serif`; x.fillStyle = mk === '?' ? '#5fd68a' : mk === '★' ? '#ff9a2a' : '#f2b33d'; x.fillText(mk, a, b - 8 * devicePixelRatio); }
+    x.font = `${13 * devicePixelRatio}px "Alegreya Sans",sans-serif`;
     for (const g of GUARIDAS) { const [a, b] = P(g.x, g.z); x.fillStyle = p.reliq[g.reg] || (g.reg === 'salamanca' && p.fin) ? '#7d7' : '#ff5a4a'; x.fillText('☠', a, b + 5); }
     for (const pu of PUEBLOS) { const [a, b] = P(pu.x, pu.z); x.fillStyle = p.pueblos[pu.id] ? '#fff' : '#bba'; x.fillText('⌂ ' + (p.pueblos[pu.id] ? pu.n : '?'), a, b + 5); }
     const m = this.track && MIS[this.track]; if (m) { const d = this.misiones.destino(m), [a, b] = P(d.x, d.z); x.fillStyle = '#ffd23a'; x.font = `${20 * devicePixelRatio}px sans-serif`; x.fillText('★', a, b + 7); }
@@ -296,7 +319,7 @@ export class UI {
   dibujarOv(dt, camera) {
     const W = innerWidth, H = innerHeight, dpr = Math.min(2, devicePixelRatio || 1), cv = this.ov; if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
     const x = this.cx; x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, H); const j = this.juego; if (!j.activo) return;
-    const v = new THREE.Vector3(), P = (wx, wy, wz) => { v.set(wx, wy, wz).project(camera); return v.z < 1 && v.z > -1 ? [(v.x + 1) / 2 * W, (1 - v.y) / 2 * H] : null; };
+    const v = new THREE.Vector3(), P = (wx, wy, wz) => { v.set(wx, wy + alto(wx, wz), wz).project(camera); return v.z < 1 && v.z > -1 ? [(v.x + 1) / 2 * W, (1 - v.y) / 2 * H] : null; };
     const barra = (a, b, w, k, col) => { x.fillStyle = 'rgba(10,5,12,.75)'; x.fillRect(a - w / 2 - 1, b - 1, w + 2, 6); x.fillStyle = col; x.fillRect(a - w / 2, b, w * Math.max(0, k), 4); };
     x.textAlign = 'center'; x.font = '600 13px "Alegreya Sans",sans-serif';
     for (const bc of j.bichos.values()) {
@@ -305,7 +328,20 @@ export class UI {
       x.fillStyle = dif >= 4 ? '#ff6a5a' : dif <= -4 ? '#aaa' : '#f3e6c8'; x.fillText((bc.n ? bc.n + ' · ' : '') + 'Nv ' + bc.lv, p[0], p[1] - 4);
     }
     for (const o of j.otros.values()) { const p = P(o.x, 2.9, o.z); if (!p) continue; barra(p[0], p[1], 44, o.hp, '#5fd68a'); x.fillStyle = '#8ec5e8'; x.fillText(`${o.n} · ${o.lv}`, p[0], p[1] - 4); }
-    for (const n of j.npcs) { if (Math.abs(n.x - j.yo.x) > 26 || Math.abs(n.z - j.yo.z) > 30) continue; const p = P(n.x, 2.7, n.z); if (!p) continue; const mk = n.rol === 'pulpero' || n.rol === 'herrero' || n.rol === 'posta' ? '' : this.misiones.marca(n); x.fillStyle = '#f3e6c8'; x.fillText(this.nombreNpc(n).replace(/^el /, 'El '), p[0], p[1]); if (mk) { x.font = '800 26px "Grenze Gotisch",serif'; x.fillStyle = mk === '?' ? '#5fd68a' : '#f2b33d'; x.fillText(mk, p[0], p[1] - 18); x.font = '600 13px "Alegreya Sans",sans-serif'; } }
+    for (const n of j.npcs) { if (Math.abs(n.x - j.yo.x) > 44 || Math.abs(n.z - j.yo.z) > 48) continue; const p = P(n.x, 2.7 * (n.s || 1), n.z); if (!p) continue; const mk = n.rol === 'pulpero' || n.rol === 'herrero' || n.rol === 'posta' ? '' : this.misiones.marca(n);
+      if (Math.abs(n.x - j.yo.x) < 26 && Math.abs(n.z - j.yo.z) < 30) { x.fillStyle = '#f3e6c8'; x.fillText(this.nombreNpc(n), p[0], p[1]); }
+      if (mk) { x.font = '800 28px "Grenze Gotisch",serif'; x.lineWidth = 4; x.strokeStyle = 'rgba(20,8,10,.85)'; const yy = p[1] - 18 + Math.sin(j.t * 3 + n.x) * 3; x.strokeText(mk, p[0], yy); x.fillStyle = mk === '?' ? '#5fd68a' : mk === '★' ? '#ff9a2a' : '#f2b33d'; x.fillText(mk, p[0], yy); x.font = '600 13px "Alegreya Sans",sans-serif'; } }
+    // globitos: lo que dice la gente al pasar
+    x.font = '600 13px "Alegreya Sans",sans-serif';
+    for (const b of j.burbujas) { const o = b.o, p = P(o.x, 2.95 * (o.s || 1) + (o.T?.mont ? .75 : 0), o.z); if (!p) continue; const al = Math.min(1, b.t * 5, (b.dur - b.t) * 2); if (al <= 0) continue;
+      const pal = String(b.txt).split(' '), L = []; let l = ''; for (const w of pal) { const t2 = l ? l + ' ' + w : w; if (x.measureText(t2).width > 190 && l) { L.push(l); l = w; } else l = t2; } L.push(l);
+      const w = Math.max(...L.map(s => x.measureText(s).width)) + 16, h = L.length * 16 + 10, bx = p[0] - w / 2, by = p[1] - h - 14; x.globalAlpha = al; x.fillStyle = 'rgba(250,244,230,.94)'; x.beginPath(); x.roundRect?.(bx, by, w, h, 8); if (!x.roundRect) x.rect(bx, by, w, h); x.fill(); x.beginPath(); x.moveTo(p[0] - 6, by + h); x.lineTo(p[0], by + h + 8); x.lineTo(p[0] + 6, by + h); x.fill();
+      x.fillStyle = '#2a1a12'; L.forEach((s, i) => x.fillText(s, p[0], by + 18 + i * 16)); x.globalAlpha = 1; }
+    // el que acompañás
+    const es = this.misiones.esc; if (es && !es.llego) { const mm = MIS[es.m], p = P(es.x, 2.3 * (mm?.obj.esc || 1), es.z); if (p && mm) { x.fillStyle = '#8ef0a8'; x.fillText(mm.obj.nombre, p[0], p[1]); } }
+    // cartel del camino
+    const ct = j.ambiente.cartel(); if (ct) { const p = P(ct.k.x, 3.2, ct.k.z); if (p) { x.font = '700 15px "Alegreya Sans",sans-serif'; const w = Math.max(x.measureText(ct.txt).width, x.measureText(ct.sub).width) + 20; x.fillStyle = 'rgba(60,38,20,.9)'; x.fillRect(p[0] - w / 2, p[1] - 40, w, 44); x.strokeStyle = '#c8a06a'; x.lineWidth = 2; x.strokeRect(p[0] - w / 2, p[1] - 40, w, 44); x.fillStyle = '#f7e6c4'; x.fillText(ct.txt, p[0], p[1] - 22); x.font = '600 13px "Alegreya Sans",sans-serif'; x.fillStyle = '#e8cc98'; x.fillText(ct.sub, p[0], p[1] - 6); } }
+    x.font = '600 13px "Alegreya Sans",sans-serif';
     // números
     for (let i = j.nums.length - 1; i >= 0; i--) { const n = j.nums[i]; n.t += dt; if (n.t > 1) { j.nums.splice(i, 1); continue; } const p = P(n.x, n.y + n.t * 1.6, n.z); if (!p) continue; x.globalAlpha = 1 - Math.max(0, n.t - .6) / .4; x.font = `800 ${Math.round(18 * n.s)}px "Alegreya Sans",sans-serif`; x.lineWidth = 3; x.strokeStyle = 'rgba(0,0,0,.7)'; x.strokeText(n.txt, p[0], p[1]); x.fillStyle = n.col; x.fillText(n.txt, p[0], p[1]); }
     x.globalAlpha = 1;
@@ -328,7 +364,8 @@ export class UI {
     c.drawImage(this.mapaC, (y.x - R - O.x) / O.k, (y.z - R - O.z) / O.k, R * 2 / O.k, R * 2 / O.k, 0, 0, S, S);
     const k = S / (R * 2), P = (wx, wz) => [(wx - y.x) * k + S / 2, (wz - y.z) * k + S / 2];
     for (const b of j.bichos.values()) { if (b.die) continue; const [a, d] = P(b.x, b.z); c.fillStyle = b.jefe ? '#ff2a1a' : b.camp ? '#f2b33d' : '#e8453c'; c.fillRect(a - (b.jefe ? 3 : 1.5), d - (b.jefe ? 3 : 1.5), b.jefe ? 6 : 3, b.jefe ? 6 : 3); }
-    for (const n of j.npcs) { const [a, d] = P(n.x, n.z); if (a < 0 || a > S || d < 0 || d > S) continue; c.fillStyle = '#f2e6c8'; c.fillRect(a - 1.5, d - 1.5, 3, 3); }
+    for (const n of j.npcs) { const [a, d] = P(n.x, n.z); if (a < 0 || a > S || d < 0 || d > S) continue; const mk = n.rol === 'pulpero' || n.rol === 'herrero' || n.rol === 'posta' ? '' : this.misiones.marca(n); if (mk) { c.font = '800 13px sans-serif'; c.textAlign = 'center'; c.fillStyle = mk === '?' ? '#5fd68a' : mk === '★' ? '#ff9a2a' : '#f2b33d'; c.fillText(mk, a, d + 4); } else { c.fillStyle = '#f2e6c8'; c.fillRect(a - 1.5, d - 1.5, 3, 3); } }
+    { const m = this.track && MIS[this.track]; if (m) { const q = this.misiones.destino(m); let [a, d] = P(q.x, q.z); const dx = a - S / 2, dz = d - S / 2, L = Math.hypot(dx, dz), R2 = S / 2 - 8; if (L > R2) { a = S / 2 + dx / L * R2; d = S / 2 + dz / L * R2; } c.font = '800 14px sans-serif'; c.textAlign = 'center'; c.fillStyle = '#ffd23a'; c.fillText('★', a, d + 5); } }
     for (const o of j.otros.values()) { const [a, d] = P(o.x, o.z); c.fillStyle = '#8ec5e8'; c.beginPath(); c.arc(a, d, 3, 0, 7); c.fill(); }
     c.fillStyle = '#fff'; c.strokeStyle = '#e8453c'; c.lineWidth = 2; c.beginPath(); c.arc(S / 2, S / 2, 4, 0, 7); c.fill(); c.stroke(); c.restore();
   }

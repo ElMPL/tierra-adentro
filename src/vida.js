@@ -3,7 +3,7 @@
 import {TAU, clamp, lerp, rnd, FX} from '../lib/gfx.js';
 import {audio} from '../lib/audio.js';
 import {CHARS} from '../shared/reglas.js';
-import {chocar, agua, dentro, enPueblo, regionEn, PUEBLOS, FIJOS, CAMPOS, SALA} from '../shared/mapa.js';
+import {chocar, agua, dentro, enPueblo, regionEn, PUEBLOS, FIJOS, CAMPOS, SALA, empinado, barranco} from '../shared/mapa.js';
 import {esNoche} from '../shared/sim.js';
 
 const FAUNA = {pampa: [['vaca', 3], ['caballo', 2.4], ['oveja', 2]], ibera: [['vaca', 2], ['caballo', 1]], monte: [['vaca', 1.4], ['perro', 1]], ingenio: [['caballo', 1.4], ['vaca', 1]],
@@ -17,7 +17,7 @@ const NOMBRES = {caballo: ['Malacara', 'Tostado', 'Overo', 'Zaino', 'Moro', 'Pic
 export const MONTURAS = {
   caballo: {n: 'Caballo criollo', mod: 'm_caballo', ic: 'm_caballo', s: 1, alto: .62, vel: 1.75, hab: 'Salto: pasa por arriba de troncos y pircas', cd: 1.4, como: 'Domá un bagual en la pampa, el Iberá, el Ingenio, Cuyo o la Patagonia', doma: 1},
   toro: {n: 'Toro', mod: 'm_vaca', ic: 'm_vaca', s: 1.1, alto: .8, vel: 1.55, arm: .1, hab: 'Embestida: arrasa con todo lo que tiene adelante. Aguantás 10% más', cd: 3, como: 'Jineteá una vaca en la pampa, el Iberá o el monte (es más bravo que un caballo)', doma: 1.25},
-  vicuna: {n: 'Vicuña', mod: 'm_vicuna', ic: 'm_vicuna', s: 1.22, alto: .5, vel: 1.7, hab: 'Brinco: un salto altísimo que pasa por arriba de todo', cd: 2, como: 'Domá una vicuña en la Puna, Cuyo o la Patagonia', doma: 1.1},
+  vicuna: {n: 'Vicuña', mod: 'm_vicuna', ic: 'm_vicuna', s: 1.22, alto: .5, vel: 1.7, trepa: 1, hab: 'Trepa por los barrancos como si nada. Brinco: un salto altísimo que pasa por arriba de todo', cd: 2, como: 'Domá una vicuña en la Puna, Cuyo o la Patagonia', doma: 1.1},
   yacare: {n: 'Yacaré', mod: 'f_yacare', ic: 'f_yacare', s: 1.25, alto: .45, vel: 1.45, nada: 1, hab: 'Nada por ríos y lagunas hondas, y en el agua va más rápido. Coletazo alrededor', cd: 3, como: 'Vencé a Mbói Tu’ĩ en los Esteros del Iberá'},
   mula: {n: 'Mula Ánima', mod: 'f_almamula', ic: 'f_almamula', s: .55, alto: .95, vel: 1.65, fuego: 1, hab: 'Deja fuego por donde pasa. Coz que deja duros a los bichos', cd: 4, como: 'Vencé a la Alma Mula en El Impenetrable'},
   familiar: {n: 'El Familiar', mod: 'f_familiar', ic: 'f_familiar', s: 1.25, alto: .9, vel: 1.85, robo: .05, hab: 'Te curás un poco con cada golpe. Aullido que paraliza de miedo', cd: 8, como: 'Vencé al Familiar en El Ingenio'},
@@ -49,7 +49,7 @@ export const RUMORES = [
   'Cada leyenda que voltee diez veces le enseña una maña. Y la fama también: la gente le enseña cosas al que respeta.',
   'De noche los bichos son más bravos y ven más lejos. Pero de noche también salen las cosas lindas.',
 ];
-const libre = (x, z) => dentro(x, z, 6) && agua(x, z) < .05 && !enPueblo(x, z, 6) && regionEn(x, z) !== 'salamanca' && !CAMPOS.some(c => Math.abs(c.x - x) < 14 && Math.abs(c.z - z) < 14);
+const libre = (x, z) => dentro(x, z, 6) && agua(x, z) < .05 && !barranco(x, z, 3) && !enPueblo(x, z, 6) && regionEn(x, z) !== 'salamanca' && !CAMPOS.some(c => Math.abs(c.x - x) < 14 && Math.abs(c.z - z) < 14);
 const ang = (a, b) => { let d = a - b; while (d > Math.PI) d -= TAU; while (d < -Math.PI) d += TAU; return d; };
 
 export class Vida {
@@ -98,7 +98,7 @@ export class Vida {
       else if (a.st === 'camina') { const ex = a.tx - a.x, ez = a.tz - a.z, l = Math.hypot(ex, ez); sp = 1.1; a.ry = lerpA(a.ry, Math.atan2(ex, ez), dt * 3); if (l < .5 || a.t <= 0) { a.st = 'pasta'; a.t = rnd(3, 8); } }
       else if (a.t <= 0) { a.st = 'camina'; a.t = 7; const b = Math.random() * TAU, r = rnd(1, 7); a.tx = a.hx + Math.sin(b) * r; a.tz = a.hz + Math.cos(b) * r; }
       if (a.k === 'perro' && a.st !== 'huye' && d < 14 && d > 2.5) { sp = Math.min(6, d); a.ry = lerpA(a.ry, Math.atan2(-dx, -dz), dt * 5); if (J.t > this.mooT && Math.random() < dt * .3) { this.mooT = J.t + 3; audio.play('bark'); } }
-      if (sp) { const ox2 = a.x, oz2 = a.z; a.x += Math.sin(a.ry) * sp * dt; a.z += Math.cos(a.ry) * sp * dt; if (agua(a.x, a.z) > .25 || !dentro(a.x, a.z, 4) || enPueblo(a.x, a.z, 2) && a.k !== 'perro') { a.x = ox2; a.z = oz2; a.ry += Math.PI * .6; a.fx = Math.sin(a.ry); a.fz = Math.cos(a.ry); } else chocar(a, .7); }
+      if (sp) { const ox2 = a.x, oz2 = a.z; a.x += Math.sin(a.ry) * sp * dt; a.z += Math.cos(a.ry) * sp * dt; if (agua(a.x, a.z) > .25 || !dentro(a.x, a.z, 4) || (a.k !== 'vicuna' && empinado(a.x, a.z)) || enPueblo(a.x, a.z, 2) && a.k !== 'perro') { a.x = ox2; a.z = oz2; a.ry += Math.PI * .6; a.fx = Math.sin(a.ry); a.fz = Math.cos(a.ry); } else chocar(a, .7); }
       a.mv = lerp(a.mv, sp > .2 ? 1 : 0, Math.min(1, dt * 6)); a.ph += dt * sp * (a.k === 'caballo' ? 1.5 : 2.2);
     }
   }
@@ -147,7 +147,7 @@ export class Vida {
     const m = this.mio, y = this.y; if (!m) return; let sp = 0;
     if (m.st === 'viene') { const dx = y.x - m.x, dz = y.z - m.z, d = Math.hypot(dx, dz); m.t -= dt; sp = Math.min(12, d * 2); m.ry = lerpA(m.ry, Math.atan2(dx, dz), dt * 6); if (d < 1.8 && y.vivo && !this.doma) { this.montar(); return; } if (m.t <= 0) { m.x = y.x - Math.sin(m.ry) * 2; m.z = y.z - Math.cos(m.ry) * 2; } }
     else { m.t -= dt; if (m.t <= 0) { m.t = rnd(3, 7); m.ry += rnd(-1, 1); } if (m.t > 5.5) sp = .9; }
-    if (sp) { m.x += Math.sin(m.ry) * sp * dt; m.z += Math.cos(m.ry) * sp * dt; if (!MONTURAS[m.k]?.vuela && m.st !== 'viene') chocar(m, .6); }
+    if (sp) { const ox = m.x, oz = m.z; m.x += Math.sin(m.ry) * sp * dt; m.z += Math.cos(m.ry) * sp * dt; if (!MONTURAS[m.k]?.vuela && m.st !== 'viene') chocar(m, .6, false, ox, oz, MONTURAS[m.k]?.trepa); }
     m.mv = lerp(m.mv, sp > .2 ? 1 : 0, Math.min(1, dt * 6)); m.ph += dt * sp * 1.5;
   }
   dar(k) {

@@ -2,7 +2,7 @@
 // Cada jugador maneja su propio personaje y su vida; el mundo decide dónde están los bichos y a quién atacan.
 // Los ataques de los bichos se anuncian con tiempo: cada pantalla se fija si su jugador quedó adentro cuando pegan.
 import {mul, clamp} from './azar.js';
-import {CAMPOS, GUARIDAS, REG, PUEBLOS, CAMINOS, chocar, enPueblo, regionEn, nivelEn, dentro, agua} from './mapa.js';
+import {CAMPOS, GUARIDAS, REG, PUEBLOS, CAMINOS, chocar, enPueblo, regionEn, nivelEn, dentro, agua, barranco} from './mapa.js';
 import {bicho, jefe, PATRON, botin, ENEMIES, CHARS, AMULETOS, xpSig} from './reglas.js';
 
 export const DIA = 20 * 60; // un día entero dura 20 minutos
@@ -94,7 +94,7 @@ export class Mundo {
     this.t += dt; const vivos = [...this.js.values()].filter(p => p.listo);
     this.campT -= dt; if (this.campT <= 0) { this.campT = 1; this.revisar(vivos); }
     const noche = esNoche(this.hora());
-    for (const b of this.bs.values()) this.piensa(b, dt, vivos, noche);
+    this.dtT = dt; for (const b of this.bs.values()) this.piensa(b, dt, vivos, noche);
     this.evT -= dt; if (this.evT <= 0) { this.evT = 70 + this.q() * 70; this.nuevoEvento(vivos, noche); }
     for (const e of [...this.ev.values()]) this.evento(e, dt, vivos, noche);
     this.truenos(dt);
@@ -128,14 +128,14 @@ export class Mundo {
   // ---------- cabeza de los bichos ----------
   piensa(b, dt, vivos, noche) {
     const q = this.q;
-    if (b.vx || b.vz) { b.x += b.vx * dt; b.z += b.vz * dt; const k = Math.max(0, 1 - dt * 7); b.vx *= k; b.vz *= k; if (Math.abs(b.vx) + Math.abs(b.vz) < .1) b.vx = b.vz = 0; if (!b.fly) chocar(b, b.r); }
+    if (b.vx || b.vz) { const ox = b.x, oz = b.z; b.x += b.vx * dt; b.z += b.vz * dt; const k = Math.max(0, 1 - dt * 7); b.vx *= k; b.vz *= k; if (Math.abs(b.vx) + Math.abs(b.vz) < .1) b.vx = b.vz = 0; if (!b.fly) chocar(b, b.r, false, ox, oz); }
     b.mv = 0; b.cd -= dt; if (b.traba > 0) b.traba -= dt;
     if (b.aturde > 0) { b.aturde -= dt; b.sk = 0; return; }
     if (b.ai === 'jefe') return this.jefe(b, dt, vivos);
     if (b.ai === 'huye') return this.huye(b, dt, vivos);
     const sp = b.vel * (b.traba > 0 ? .5 : 1) * (noche ? 1.08 : 1);
     if (b.sk === 2) { // preparando un golpe
-      b.t -= dt; if (b.mov) { const m = b.mov; m.t += dt; const k = clamp(m.t / m.d, 0, 1); b.x = m.x0 + (m.x1 - m.x0) * k; b.z = m.z0 + (m.z1 - m.z0) * k; if (!b.fly) chocar(b, b.r); }
+      b.t -= dt; if (b.mov) this.empuje(b);
       if (b.t <= 0) { b.sk = 0; b.mov = null; b.cd = 1.6 + q() * 1.1; if (b.ai === 'kami') { b.hp = 0; this.muere(b); } }
       return;
     }
@@ -172,12 +172,14 @@ export class Mundo {
     b.ry = Math.atan2(dx, dz);
     if (b.cd <= 0) this.pega(b);
   }
+  // embestidas y saltos: si se topa con algo (un árbol, un barranco) se frena ahí
+  empuje(b) { const m = b.mov, ox = b.x, oz = b.z; m.t += this.dtT || .05; const k = clamp(m.t / m.d, 0, 1); b.x = m.x0 + (m.x1 - m.x0) * k; b.z = m.z0 + (m.z1 - m.z0) * k; if (b.fly) return; const ix = b.x, iz = b.z; chocar(b, b.r, false, ox, oz); if (b.x !== ix || b.z !== iz) { m.x0 = m.x1 = b.x; m.z0 = m.z1 = b.z; } }
   anda(b, x, z, sp, dt, stop) {
-    const dx = x - b.x, dz = z - b.z, d = Math.hypot(dx, dz); if (d <= stop) return true;
+    const ox = b.x, oz = b.z, dx = x - b.x, dz = z - b.z, d = Math.hypot(dx, dz); if (d <= stop) return true;
     const k = Math.min(d - stop, sp * dt) / d; b.x += dx * k; b.z += dz * k; b.ry = Math.atan2(dx, dz); b.mv = 1;
     // no amontonarse
     for (const o of this.bs.values()) { if (o === b || o.jefe) continue; const ex = b.x - o.x, ez = b.z - o.z; if (Math.abs(ex) > 2.5 || Math.abs(ez) > 2.5) continue; const e = Math.hypot(ex, ez), R = b.r + o.r; if (e < R && e > .001) { const f = (R - e) * .5 / e; b.x += ex * f; b.z += ez * f; } }
-    if (!b.fly) chocar(b, b.r);
+    if (!b.fly) chocar(b, b.r, false, ox, oz);
     return false;
   }
   // golpe anunciado: c = círculo, l = línea
@@ -222,7 +224,7 @@ export class Mundo {
   // ---------- eventos del mundo: cada tanto pasa algo cerca de alguien ----------
   avisoEv(x, z, m, R = 170) { for (const p of this.js.values()) if (p.listo && Math.abs(p.x - x) < R && Math.abs(p.z - z) < R) this.envia(p.id, {t: 'ev', x: r1(x), z: r1(z), ...m}); }
   lugarCerca(x, z, ra, rb, ok = () => true) {
-    for (let i = 0; i < 30; i++) { const a = this.q() * 6.283, r = ra + this.q() * (rb - ra), px = x + Math.sin(a) * r, pz = z + Math.cos(a) * r; if (dentro(px, pz, 8) && agua(px, pz) < .3 && regionEn(px, pz) !== 'salamanca' && ok(px, pz)) return [px, pz]; }
+    for (let i = 0; i < 30; i++) { const a = this.q() * 6.283, r = ra + this.q() * (rb - ra), px = x + Math.sin(a) * r, pz = z + Math.cos(a) * r; if (dentro(px, pz, 8) && agua(px, pz) < .3 && regionEn(px, pz) !== 'salamanca' && !barranco(px, pz, 3) && ok(px, pz)) return [px, pz]; }
     return null;
   }
   ponEv(e) { e.id = this.nid++; this.ev.set(e.id, e); this.evUlt[e.k] = this.t; return e; }
@@ -358,7 +360,7 @@ export class Mundo {
     for (const p of vivos) { if (!p.vivo) continue; const d = Math.hypot(p.x - g.x, p.z - g.z); if (d < bd) { bd = d; tg = p; } }
     if (!tg) { if (b.st !== 'quieto') { b.st = 'quieto'; b.sk = 0; b.mov = null; } b.hp = Math.min(b.hpM, b.hp + b.hpM * dt * .2); b.dano.clear(); this.anda(b, g.x, g.z, b.vel, dt, 1); return; }
     if (b.st === 'quieto') { b.st = 'persigue'; b.cd = 1.5; this.cerca(b.x, b.z, {t: 'jefe', b: b.id, n: b.n, sub: b.sub, reg: g.reg, jefe: b.tipo}, 80); }
-    if (b.sk === 2) { b.t -= dt; if (b.mov) { const m = b.mov; m.t += dt; const k = clamp(m.t / m.d, 0, 1); b.x = m.x0 + (m.x1 - m.x0) * k; b.z = m.z0 + (m.z1 - m.z0) * k; chocar(b, b.r); } if (b.t <= 0) { b.sk = 0; b.mov = null; } return; }
+    if (b.sk === 2) { b.t -= dt; if (b.mov) this.empuje(b); if (b.t <= 0) { b.sk = 0; b.mov = null; } return; }
     const dx = tg.x - b.x, dz = tg.z - b.z, d = Math.hypot(dx, dz) || 1, ux = dx / d, uz = dz / d; b.ry = Math.atan2(dx, dz);
     if (d > 3.2) this.anda(b, tg.x, tg.z, b.vel * .8, dt, 3);
     if (b.cd > 0) return;

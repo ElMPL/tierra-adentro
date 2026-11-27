@@ -142,6 +142,104 @@ for (const k of ORDEN) {
   gen('pulpero', a0, 14.5); gen('herrero', .95, 10.5); gen('vecino', a0 + Math.PI / 2, 14.5); gen('baqueano', a0 + Math.PI, 14.5); gen('cantor', a0 + Math.PI * 1.5, 14.5); gen('posta', -2.6, 4.2);
 }
 export const GUARIDAS = ORDEN.map(k => ({reg: k, jefe: REG[k].jefe, x: REG[k].guarida.x, z: REG[k].guarida.z, n: REG[k].guarida.n, r: 20}));
+
+// ---------- relieve ----------
+// La altura del piso sale de una grilla de 2 m que se arma una sola vez, igual en el servidor y en cada pantalla.
+// Llanura en la pampa, esteros bajos, la puna alta, mesetas escalonadas en la Patagonia y sierras entre territorios,
+// con abras donde pasan los caminos. Los ríos van por el fondo de sus valles. Lo muy empinado no se sube caminando.
+export const GR = {x0: -262, z0: NORTE - 30, res: 2, w: 262, h: 330};
+const BASE = {pampa: 0, ibera: -.4, monte: .8, ingenio: 2.8, selva: 4.8, cuyo: 5.6, puna: 10.5, sur: 3.4};
+const RUGA = {pampa: .9, ibera: .2, monte: .5, ingenio: 1.6, selva: 4, cuyo: 2.2, puna: 2.4, sur: 2.6};
+const CRESTA = {pampa: 0, ibera: 0, monte: 0, ingenio: .4, selva: .5, cuyo: 1.8, puna: 2.6, sur: .4};
+// qué tan alta es la sierra en el límite entre dos territorios
+const SIERRA = {'cuyo|pampa': 8, 'pampa|sur': 7.5, 'ingenio|puna': 9, 'cuyo|puna': 11, 'cuyo|ingenio': 8, 'cuyo|sur': 7, 'monte|selva': 6, 'ibera|selva': 4.5,
+  'ingenio|monte': 4, 'monte|puna': 8, 'ingenio|selva': 6, 'ibera|monte': 1.5, 'ibera|pampa': 2, 'monte|pampa': 2.5, 'ingenio|pampa': 3};
+// cerros que se ven de lejos
+export const CERROS = [
+  {id: 'colores', n: 'Cerro de los Siete Colores', x: -88, z: -262, r: 20, h: 10},
+  {id: 'ventana', n: 'Sierra de la Ventana', x: -58, z: 124, r: 13, h: 9},
+  {id: 'uritorco', n: 'Cerro Uritorco', x: -95, z: 52, r: 15, h: 8},
+  {id: 'champaqui', n: 'Cerro Champaquí', x: -205, z: -88, r: 18, h: 9},
+];
+export const SALAR = {x: -200, z: -226, r: 26};
+export let SALTO = null; // las cataratas, donde el Paraná baja de la selva
+let ALT = null, RIS = null, RGI = null, CAMG = null, AGUG = null, PEN = null;
+const sst = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+function baseEn(x, z, D) {
+  const wx = x + (fbm(x * .012, z * .012, 11) - .5) * 60, wz = z + (fbm(x * .012, z * .012, 23) - .5) * 60; let d1 = 1e9;
+  for (let i = 0; i < RL.length; i++) { const r = RL[i]; D[i] = Math.sqrt((wx - r.x) ** 2 + (wz - r.z) ** 2) / r.w; if (D[i] < d1) d1 = D[i]; }
+  let sw = 0, b = 0; for (let i = 0; i < RL.length; i++) { const e = Math.exp(-(D[i] - d1) / 14); sw += e; b += e * BASE[RL[i].k]; } return b / sw;
+}
+// distancia a lo largo de una línea (para saber qué está aguas arriba del salto)
+function largo(px, pz, pts) { let d = 1e9, L = 0, Lb = 0; for (let i = 0; i < pts.length - 1; i++) { const [ax, az] = pts[i], [bx, bz] = pts[i + 1], dx = bx - ax, dz = bz - az, l = Math.hypot(dx, dz); let t = ((px - ax) * dx + (pz - az) * dz) / (l * l); t = clamp(t, 0, 1); const e = Math.hypot(ax + dx * t - px, az + dz * t - pz); if (e < d) { d = e; Lb = L + t * l; } L += l; } return Lb; }
+function buscarSalto() {
+  const R = RIOS[0], p = R.p; let L = 0, antes = null;
+  for (let i = 0; i < p.length - 1; i++) { const [ax, az] = p[i], [bx, bz] = p[i + 1], l = Math.hypot(bx - ax, bz - az); for (let s = 0; s < l; s += 2) { const x = ax + (bx - ax) * s / l, z = az + (bz - az) * s / l, r = regionEn(x, z); if (antes === 'selva' && r !== 'selva') { const k = Math.max(0, s - 14); return {x: ax + (bx - ax) * k / l, z: az + (bz - az) * k / l, dx: (bx - ax) / l, dz: (bz - az) / l, t: L + k, alto: 5, w: R.w * 2.6}; } antes = r; } L += l; }
+  return null;
+}
+function crudo(x, z, D, O) {
+  const wx = x + (fbm(x * .012, z * .012, 11) - .5) * 60, wz = z + (fbm(x * .012, z * .012, 23) - .5) * 60;
+  let d1 = 1e9, d2 = 1e9, i1 = 0, i2 = 0;
+  for (let i = 0; i < RL.length; i++) { const r = RL[i], d = Math.sqrt((wx - r.x) ** 2 + (wz - r.z) ** 2) / r.w; D[i] = d; if (d < d1) { d2 = d1; i2 = i1; d1 = d; i1 = i; } else if (d < d2) { d2 = d; i2 = i; } }
+  let sw = 0, b = 0, ru = 0, cr = 0, ws = 0;
+  for (let i = 0; i < RL.length; i++) { const e = Math.exp(-(D[i] - d1) / 14), k = RL[i].k; sw += e; b += e * BASE[k]; ru += e * RUGA[k]; cr += e * CRESTA[k]; if (k === 'sur') ws = e; }
+  b /= sw; ru /= sw; cr /= sw; ws /= sw;
+  const cam = camino(x, z), kc = sst(2, 12, cam); if (O) { O.cam = cam; O.reg = RL[i1].k; }
+  const n1 = fbm(x * .028, z * .028, 51) - .5, n2 = 1 - Math.abs(fbm(x * .05, z * .05, 61, 3) * 2 - 1);
+  let hn = ru * n1 * 4 + cr * n2 * n2 * n2 * 3;
+  // mesetas: la Patagonia sube en escalones
+  if (ws > .01) { const st = 1.7, v = hn + 3, f = v / st - Math.floor(v / st); hn = lerp(hn, st * (Math.floor(v / st) + sst(.7, 1, f)) - 3, ws); }
+  hn *= .35 + .65 * kc;
+  // sierras en los límites, con abras
+  const m = (d2 - d1) * .5 * (RL[i1].w + RL[i2].w); let rid = 0;
+  if (m < 22) { const a = RL[i1].k, c = RL[i2].k, H = SIERRA[a < c ? a + '|' + c : c + '|' + a] ?? 3, s = 1 - m / 22, pr = s * s * (3 - 2 * s);
+    rid = H * pr * sst(.36, .5, fbm(x * .016, z * .016, 71, 3)) * (.6 + .8 * fbm(x * .045, z * .045, 73, 3)) * sst(5, 16, cam); }
+  let h = b + hn + rid;
+  for (const C of CERROS) { const dx = x - C.x, dz = z - C.z, q = (dx * dx + dz * dz) / (C.r * C.r); if (q < 9) h += C.h * Math.exp(-q * 1.6) * (.6 + .9 * n2 * n2 + .25 * fbm(x * .2, z * .2, 81, 2)); }
+  { const dx = x - SALAR.x, dz = z - SALAR.z, d = Math.hypot(dx, dz); if (d < SALAR.r + 14) h = lerp(h, b - .2, sst(SALAR.r + 14, SALAR.r, d)); }
+  // los ríos van por el fondo de su valle; el agua honda, más abajo
+  const nn = (ruido(x * .08, z * .08, 41) - .5) * 1.6; let v = 0, bed = 0;
+  for (let ri = 0; ri < RIOS.length; ri++) { const r = RIOS[ri]; if (x < r.bb[0] || x > r.bb[1] || z < r.bb[2] || z > r.bb[3]) continue; const k = dLinea(x, z, r.p) + nn; const q = clamp((r.w + 10 - k) / 9.5, 0, 1), vv = q * q * (3 - 2 * q);
+    if (vv > v) { v = vv; bed = b - 1.1; if (ri === 0 && SALTO) { const t = largo(x, z, r.p), piso = SALTO.bajo + (SALTO.bed - SALTO.bajo) * sst(SALTO.t + 30, SALTO.t + 150, t); bed = lerp(bed, Math.min(bed, piso), sst(SALTO.t - .8, SALTO.t + .8, t)); } } }
+  for (const l of LAGOS) { const dx = x - l.x, dz = z - l.z; if (Math.abs(dx) > l.r + 12 || Math.abs(dz) > l.r + 12) continue; const k = Math.sqrt(dx * dx + dz * dz) + nn * 3 * (fbm(x * .05, z * .05, 3) - .3); const q = clamp((l.r + 9 - k) / 8.5, 0, 1), vv = q * q * (3 - 2 * q); if (vv > v) { v = vv; bed = b - (l.hondo ? 1.8 : 1.1); } }
+  if (v > 0) h = lerp(h, bed, v);
+  // el mar al este, la cordillera al oeste y al norte
+  const [o, e] = bordeX(z); if (x > e - 14) h = lerp(h, -1.4, sst(e - 14, e - 1, x)); if (x < o) h += Math.min(26, (o - x) * .7); if (z < NORTE) h += Math.min(26, (NORTE - z) * .6);
+  return h;
+}
+function armarRelieve() {
+  const G = GR, N = G.w * G.h, D = new Float64Array(RL.length), O = {};
+  ALT = new Float32Array(N); RIS = new Uint8Array(N); PEN = new Uint8Array(N); RGI = new Uint8Array(N); CAMG = new Float32Array(N); AGUG = new Float32Array(N);
+  SALTO = buscarSalto(); if (SALTO) { SALTO.bed = baseEn(SALTO.x, SALTO.z, D) - 1.1; SALTO.bajo = SALTO.bed - SALTO.alto; }
+  // la altura de los pueblos, las guaridas y la Salamanca, para emparejar el piso alrededor
+  const llano = [...PUEBLOS.map(p => ({x: p.x, z: p.z, a: 32, b: 46})), ...GUARIDAS.filter(g => g.reg !== 'salamanca').map(g => ({x: g.x, z: g.z, a: 20, b: 30}))]; for (const l of llano) l.h = crudo(l.x, l.z, D);
+  const idx = Object.fromEntries(ORDEN.map((k, i) => [k, i]));
+  for (let j = 0; j < G.h; j++) for (let i = 0; i < G.w; i++) {
+    const x = G.x0 + (i + .5) * G.res, z = G.z0 + (j + .5) * G.res, k = j * G.w + i;
+    let h = crudo(x, z, D, O);
+    for (const l of llano) { const dx = x - l.x, dz = z - l.z; if (Math.abs(dx) > l.b || Math.abs(dz) > l.b) continue; const d = Math.hypot(dx, dz); if (d < l.b) h = lerp(h, l.h, sst(l.b, l.a, d)); }
+    // la Salamanca: un cráter con una sola entrada al sur
+    const sx = x - SALA.x, sz = z - SALA.z, ds = Math.hypot(sx, sz);
+    if (ds < SALA.r + 14) { const R = SALA.r; if (ds < R) h = lerp(-1.6, h, sst(R - 15, R, ds)); const t = (ds - R) / 7; let rim = t > -1 && t < 1 ? 8.5 * (1 - t * t) ** 2 : 0; if (sz > 25) rim *= sst(4, 10, Math.abs(sx)); h += rim * (.85 + .3 * fbm(x * .15, z * .15, 91, 2)); }
+    ALT[k] = h; CAMG[k] = O.cam; AGUG[k] = agua(x, z);
+    RGI[k] = idx[!dentro(x, z, -40) ? (z > 0 ? 'sur' : x < 0 ? 'puna' : 'selva') : ds < SALA.r ? 'salamanca' : O.reg];
+  }
+  for (let j = 1; j < G.h - 1; j++) for (let i = 1; i < G.w - 1; i++) { const k = j * G.w + i, gx = (ALT[k + 1] - ALT[k - 1]) / (2 * G.res), gz = (ALT[k + G.w] - ALT[k - G.w]) / (2 * G.res); const g2 = gx * gx + gz * gz; RIS[k] = g2 > 1.05 ? 1 : 0; PEN[k] = Math.min(255, Math.sqrt(g2) * 100); }
+}
+export function relieve() { if (!ALT) armarRelieve(); return {ALT, RIS, RGI, CAMG, AGUG, PEN}; }
+// pendiente del piso (0 = llano, 1 = 45 grados)
+export function pendiente(x, z) { if (!ALT) armarRelieve(); const G = GR, i = clamp(Math.floor((x - G.x0) / G.res), 0, G.w - 1), j = clamp(Math.floor((z - G.z0) / G.res), 0, G.h - 1); return PEN[j * G.w + i] / 100; }
+// altura del piso en cualquier punto (entre las cuatro celdas más cercanas)
+export function alto(x, z) {
+  if (!ALT) armarRelieve(); const G = GR; let fx = (x - G.x0) / G.res - .5, fz = (z - G.z0) / G.res - .5;
+  fx = fx < 0 ? 0 : fx > G.w - 1.001 ? G.w - 1.001 : fx; fz = fz < 0 ? 0 : fz > G.h - 1.001 ? G.h - 1.001 : fz;
+  const i = fx | 0, j = fz | 0, tx = fx - i, tz = fz - j, k = j * G.w + i, A = ALT;
+  return (A[k] + (A[k + 1] - A[k]) * tx) * (1 - tz) + (A[k + G.w] + (A[k + G.w + 1] - A[k + G.w]) * tx) * tz;
+}
+// muy empinado para subir caminando
+export function empinado(x, z) { if (!ALT) armarRelieve(); const G = GR, i = Math.floor((x - G.x0) / G.res), j = Math.floor((z - G.z0) / G.res); if (i < 1 || j < 1 || i >= G.w - 1 || j >= G.h - 1) return false; return RIS[j * G.w + i] === 1; }
+// hay algo empinado cerca (para no poner cosas al pie de un barranco)
+export function barranco(x, z, r) { for (let a = 0; a < 8; a++) if (empinado(x + Math.sin(a * .785) * r, z + Math.cos(a * .785) * r)) return true; return empinado(x, z); }
 // adornos alrededor de cada guarida
 const ANILLO = {pampa: 'tapera', ibera: 'junco', monte: 'tronco', ingenio: 'bagazo', selva: 'columna', cuyo: 'penasco', puna: 'apachetaD', sur: 'chenque', salamanca: 'caldero'};
 for (const g of GUARIDAS) { const n = 9; for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; fijo(ANILLO[g.reg], g.x + Math.sin(a) * 23, g.z + Math.cos(a) * 23, a + Math.PI / 2); } fijo('craneo', g.x + 6, g.z - 26, 3.1); }
@@ -152,10 +250,19 @@ fijo('antorcha', SALA.puerta.x - 6, SALA.puerta.z); fijo('antorcha', SALA.puerta
 {
   const q = mul(1234); let id = 0;
   for (const c of CAMINOS) for (let i = 1; i < c.p.length - 1; i++) { const [x, z] = c.p[i]; const ox = (q() > .5 ? 1 : -1) * 6; LUGARES.push({id: id++, tipo: regionEn(x, z) === 'cuyo' ? 'difunta' : 'santuario', x: x + ox, z: z + 3}); }
-  for (const k of RELIQUIAS) { const R = REG[k]; for (let i = 0; i < 3; i++) { let x, z, t = 0; do { const a = q() * 6.28, r = 30 + q() * 75; x = R.c[0] + Math.sin(a) * r; z = R.c[1] + Math.cos(a) * r; } while ((t++ < 40) && (!dentro(x, z, 15) || regionEn(x, z) !== k || agua(x, z) > 0 || camino(x, z) < 8)); LUGARES.push({id: id++, tipo: 'entierro', x, z}); } }
+  for (const k of RELIQUIAS) { const R = REG[k]; for (let i = 0; i < 3; i++) { let x, z, t = 0; do { const a = q() * 6.28, r = 30 + q() * 75; x = R.c[0] + Math.sin(a) * r; z = R.c[1] + Math.cos(a) * r; } while ((t++ < 40) && (!dentro(x, z, 15) || regionEn(x, z) !== k || agua(x, z) > 0 || camino(x, z) < 8 || barranco(x, z, 3))); LUGARES.push({id: id++, tipo: 'entierro', x, z}); } }
   for (let i = 0; i < 5; i++) { const R = REG.puna; const a = i * 1.3, r = 25 + i * 12; LUGARES.push({id: id++, tipo: 'apacheta', x: R.c[0] + Math.sin(a) * r, z: R.c[1] + Math.cos(a) * r}); }
   for (const l of LUGARES) { if (l.tipo === 'santuario') fijo('santuario', l.x, l.z, 0, 1, {misc: 1}); else if (l.tipo === 'difunta') fijo('difunta', l.x, l.z); else if (l.tipo === 'apacheta') fijo('apachetaP', l.x, l.z); else fijo('entierro', l.x, l.z, l.id); }
 }
+
+// ---------- carteles: donde un camino entra a otro territorio, un poste con flechas ----------
+export const CARTELES = [];
+for (const c of CAMINOS) {
+  if (c.b === 'salamanca') continue; let antes = regionEn(...c.p[0]);
+  for (let i = 0; i < c.p.length - 1; i++) { const [ax, az] = c.p[i], [bx, bz] = c.p[i + 1], l = Math.hypot(bx - ax, bz - az);
+    for (let s = 0; s < l; s += 3) { const x = ax + (bx - ax) * s / l, z = az + (bz - az) * s / l, r = regionEn(x, z); if (r !== antes && r !== 'salamanca' && antes !== 'salamanca') { const nx = -(bz - az) / l, nz = (bx - ax) / l; CARTELES.push({x: x + nx * 4, z: z + nz * 4, de: antes, a: r, c, ry: Math.atan2(bx - ax, bz - az) + Math.PI / 2}); } antes = r; } }
+}
+for (const k of CARTELES) fijo('cartel', k.x, k.z, k.ry);
 
 // ---------- campamentos de bichos ----------
 export const CAMPOS = [];
@@ -164,7 +271,7 @@ export const CAMPOS = [];
   const G = 26, K = {pampa: .5, sur: .55, cuyo: .75}; let id = 0;
   for (let gz = Math.floor(NORTE / G); gz <= Math.ceil(SUR / G); gz++) for (let gx = -10; gx <= 10; gx++) {
     const q = mul(hash(gx, gz, 5)); const x = gx * G + (q() - .5) * G * .8, z = gz * G + (q() - .5) * G * .8;
-    if (!dentro(x, z, 10) || agua(x, z) > .2 || camino(x, z) < 7) continue;
+    if (!dentro(x, z, 10) || agua(x, z) > .2 || camino(x, z) < 7 || barranco(x, z, 5)) continue;
     if (q() > (K[regionEn(x, z)] ?? 1)) continue;
     if (PUEBLOS.some(p => Math.hypot(p.x - x, p.z - z) < p.r + 18)) continue;
     if (GUARIDAS.some(g => Math.hypot(g.x - x, g.z - z) < 42)) continue;
@@ -191,6 +298,7 @@ function libre(x, z, r, wet) {
   if (!dentro(x, z, 3 + r)) return false;
   const a = agua(x, z); if (wet ? a < .35 || a > 1 : a > .05) return false;
   if (camino(x, z) < 3.2 + r) return false;
+  if (r > 0 && empinado(x, z)) return false;
   for (const p of PUEBLOS) if (Math.abs(p.x - x) < 40 && Math.abs(p.z - z) < 40 && Math.hypot(p.x - x, p.z - z) < p.r + 4 + r) return false;
   for (const g of GUARIDAS) if (Math.abs(g.x - x) < 30 && Math.abs(g.z - z) < 30 && Math.hypot(g.x - x, g.z - z) < g.r + 1 + r) return false;
   const ds = Math.hypot(x - SALA.x, z - SALA.z); if (ds > SALA.r - 5 - r && ds < SALA.r + 5 + r) return false;
@@ -223,8 +331,9 @@ export function cerca(x, z, R, out = []) {
   return out;
 }
 const tmp = [];
-// corre un círculo fuera de los obstáculos y del borde. salta: puede pasar por encima de los bajos
-export function chocar(p, r, salta = false) {
+// corre un círculo fuera de los obstáculos y del borde. salta: puede pasar por encima de los bajos.
+// Si viene de (ox, oz), no lo deja meterse en un barranco: se desliza por el costado
+export function chocar(p, r, salta = false, ox, oz, trepa) {
   cerca(p.x, p.z, r + 2, tmp);
   for (const o of tmp) {
     if (salta && o.low) continue;
@@ -234,7 +343,25 @@ export function chocar(p, r, salta = false) {
   }
   if (p.z < NORTE + 2) p.z = NORTE + 2; if (p.z > SUR - 2) p.z = SUR - 2;
   const [o, e] = bordeX(p.z); if (p.x < o + 2) p.x = o + 2;
+  if (ox !== undefined && !trepa && empinado(p.x, p.z) && !empinado(ox, oz)) { if (!empinado(p.x, oz)) p.z = oz; else if (!empinado(ox, p.z)) p.x = ox; else { p.x = ox; p.z = oz; } }
   if (agua(p.x, p.z) > 1.05 || p.x > e - 1) return false;
   return true;
 }
 export const enPueblo = (x, z, m = 0) => PUEBLOS.find(p => Math.abs(p.x - x) < p.r + m && Math.abs(p.z - z) < p.r + m && Math.hypot(p.x - x, p.z - z) < p.r + m);
+
+// ---------- parajes: cada territorio dividido en lugares con nombre (como los barrios de un mapa grande) ----------
+export const PARAJES = [
+  ['pampa', 'Pueblo Ombú', 32, 95], ['pampa', 'La Cañada de las Ánimas', -5, 40], ['pampa', 'Lomas del Tala', 82, 52], ['pampa', 'Laguna del Sauce', 78, 128], ['pampa', 'Estancia La Perdida', 120, 95],
+  ['pampa', 'El rancho del séptimo hijo', 75, 192], ['pampa', 'Sierra de la Ventana', -50, 128], ['pampa', 'Camino de la Salamanca', -8, 10],
+  ['ibera', 'Puerto Irupé', 125, -20], ['ibera', 'Laguna Iberá', 142, -62], ['ibera', 'Los Embalsados', 175, -45], ['ibera', 'El Malezal', 110, -110], ['ibera', 'El embalsado de Mbói Tu’ĩ', 165, -110], ['ibera', 'Esteros del Batel', 205, -85],
+  ['monte', 'Paraje Quebrachal', 85, -200], ['monte', 'El Obraje Abandonado', 40, -158], ['monte', 'Bañado La Estrella', 70, -245], ['monte', 'Picada del Sachayoj', -8, -222], ['monte', 'El camino de la Alma Mula', 25, -268],
+  ['ingenio', 'Villa Zafra', -125, -150], ['ingenio', 'Los Cañaverales', -75, -125], ['ingenio', 'La Vía Muerta', -60, -185], ['ingenio', 'La Casona del Patrón', -158, -136], ['ingenio', 'El galpón del Familiar', -185, -125],
+  ['selva', 'Misión de las Ruinas', 175, -195], ['selva', 'Garganta del Diablo', 135, -175], ['selva', 'Tierra Colorada', 215, -175], ['selva', 'La Picada Guaraní', 214, -236], ['selva', 'La cueva del Teyú Yaguá', 190, -262],
+  ['cuyo', 'Posta del Arriero', -142, 12], ['cuyo', 'Los Viñedos', -118, 42], ['cuyo', 'Mirador del Aconcagua', -212, -24], ['cuyo', 'Médanos del Zonda', -165, 72], ['cuyo', 'El paso del Futre', -190, -45], ['cuyo', 'Cerro Uritorco', -95, 52], ['cuyo', 'Cerro Champaquí', -205, -88],
+  ['puna', 'Abra de las Apachetas', -115, -220], ['puna', 'Cerro de los Siete Colores', -88, -262], ['puna', 'Salinas Grandes', -200, -226], ['puna', 'Quebrada de las Flechas', -150, -200], ['puna', 'El nido de la Huayrapuca', -170, -268],
+  ['sur', 'Fortín del Viento', -58, 210], ['sur', 'Lago del Arrayán', -165, 235], ['sur', 'Meseta de Somuncurá', -30, 255], ['sur', 'Bosque de Lengas', -192, 190], ['sur', 'Valle de los Chenques', -100, 178], ['sur', 'La meseta de Elëngásëm', -120, 258],
+  ['salamanca', 'La Salamanca', SALA.x, SALA.z],
+].map(([reg, n, x, z], id) => ({id, reg, n, x, z}));
+for (const p of PARAJES) p.lv = [Math.max(REG[p.reg].lv[0], nivelEn(p.x, p.z, p.reg) - 1), Math.min(REG[p.reg].lv[1], nivelEn(p.x, p.z, p.reg) + 1)];
+// el paraje de un punto: el más cercano de su territorio
+export function parajeEn(x, z, rg = regionEn(x, z)) { let b = null, bd = 1e12; for (const p of PARAJES) { if (p.reg !== rg) continue; const d = (p.x - x) ** 2 + (p.z - z) ** 2; if (d < bd) { bd = d; b = p; } } return b; }

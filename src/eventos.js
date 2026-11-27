@@ -3,7 +3,7 @@
 import {TAU, clamp, lerp, rnd, FX} from '../lib/gfx.js';
 import {audio} from '../lib/audio.js';
 import {AMULETOS, OBJETOS} from '../shared/reglas.js';
-import {PUEBLOS, dentro, agua, regionEn} from '../shared/mapa.js';
+import {PUEBLOS, dentro, agua, regionEn, barranco} from '../shared/mapa.js';
 import {mul} from '../shared/azar.js';
 
 const now = () => performance.now() / 1000;
@@ -60,7 +60,7 @@ export class Eventos {
     if (this.abd) {
       const A = this.abd; A.t += dt; y.x = lerp(y.x, A.e.dx, Math.min(1, dt * 3)); y.z = lerp(y.z, A.e.dz, Math.min(1, dt * 3)); y.inv = J.t + 1; y.mv = 0;
       if (A.t > 3.2) {
-        let x = y.x, z = y.z; for (let i = 0; i < 40; i++) { const a = Math.random() * TAU, r = rnd(80, 170); x = A.x + Math.sin(a) * r; z = A.z + Math.cos(a) * r; if (dentro(x, z, 12) && agua(x, z) < .05 && regionEn(x, z) !== 'salamanca') break; x = A.x; z = A.z; }
+        let x = y.x, z = y.z; for (let i = 0; i < 40; i++) { const a = Math.random() * TAU, r = rnd(80, 170); x = A.x + Math.sin(a) * r; z = A.z + Math.cos(a) * r; if (dentro(x, z, 12) && agua(x, z) < .05 && regionEn(x, z) !== 'salamanca' && !barranco(x, z, 3)) break; x = A.x; z = A.z; }
         y.x = x; y.z = z; J.cam.x = x; J.cam.z = z; this.abd = null; J.parts.burst(x, 2, z, 40, [.6, 1, .7], {sp: 6, size: .5, type: 3, life: 1}); J.mundo.decorar(x, z, true); J.enviar(true); J.region = null;
       }
     }

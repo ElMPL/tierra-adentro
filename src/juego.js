@@ -5,7 +5,7 @@ import '../lib/models2.js';
 import {KIT} from '../lib/deco.js';
 import {audio} from '../lib/audio.js';
 import {KITS, DESBLOQUEO, ESQUIVE, danoBase, vidaMax, armadura, xpSig, NIVEL_MAX, AMULETOS, OBJETOS, ENEMIES, BOSSES, RELIQ, CHARS} from '../shared/reglas.js';
-import {chocar, agua, velAgua, enPueblo, regionEn, nivelEn, NPCS, LUGARES, PUEBLOS, REG, SALA, RELIQUIAS, dentro} from '../shared/mapa.js';
+import {chocar, agua, velAgua, enPueblo, regionEn, nivelEn, NPCS, LUGARES, PUEBLOS, REG, SALA, RELIQUIAS, dentro, alto, empinado} from '../shared/mapa.js';
 import {esNoche, DIA} from '../shared/sim.js';
 import {Vida, MONTURAS, ORDEN_M} from './vida.js';
 import {Pesca} from './pesca.js';
@@ -14,6 +14,9 @@ import {bordeX, NORTE, SUR} from '../shared/mapa.js';
 // qué montura te deja cada jefe
 const JEFE_MONTURA = {ibera: 'yacare', monte: 'mula', ingenio: 'familiar', selva: 'yaguarete', cuyo: 'condor'};
 import {Eventos} from './eventos.js';
+import {Ambiente} from './ambiente.js';
+import {PERSONAJES, NOMBRES, TRATOS} from './historia.js';
+import {parajeEn} from '../shared/mapa.js';
 import {FIJOS} from '../shared/mapa.js';
 import {ctl} from './controles.js';
 
@@ -30,7 +33,7 @@ export class Juego {
     Object.assign(this, o); // scene, camera, mundo, fx, parts, ui, cfg
     this.B = {}; this.otros = new Map(); this.bichos = new Map(); this.atks = []; this.balasE = []; this.balasP = []; this.zonas = []; this.nums = []; this.orb = [];
     this.golpes = []; this.t = 0; this.envT = 0; this.cam = {x: 0, z: 0, d: 26, sh: 0}; this.activo = false; this.snap = 0; this.ray = new THREE.Raycaster(); this.plano = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    this.npcs = NPCS.map(n => ({...n})); this.region = null; this.pueblo = null; this.jefeB = null; this.cerca = null; this.lugCd = {};
+    this.npcs = [...NPCS.map(n => ({...n})), ...PERSONAJES.map(p => ({id: 'campo:' + p.k, reg: p.reg, rol: 'campo', x: p.x, z: p.z, ry: 0, nom: p.nom, titulo: p.titulo, mod: p.mod, s: p.s || 1, dice: p.dice}))]; this.region = null; this.burbujas = []; this.ambiente = new Ambiente(this); this.pueblo = null; this.jefeB = null; this.cerca = null; this.lugCd = {};
     this.vista = 'arriba'; this.cam.yaw = Math.PI; this.cam.pitch = -.12; this.parar = 0; this.vida = new Vida(this); this.eventos = new Eventos(this); this.pesca = new Pesca(this);
     this.aljibes = FIJOS.filter(o => o.t === 'aljibe' || o.t === 'pozo');
   }
@@ -49,7 +52,9 @@ export class Juego {
     this.yo.hp = this.stats().vida * (perfil.hpPct ?? 1); if (this.yo.hp <= 0) this.yo.hp = this.stats().vida;
     this.cam.x = this.yo.x; this.cam.z = this.yo.z; this.activo = true; this.region = null; this.cam.yaw = Math.PI; this.yo.montado = false;
     this.vista = this.cfg.vista || 'arriba'; ctl.vista = this.vista; this.eventos.limpiar(); this.vida.empezar(); this.pesca.e = null; this.vistoB = leerVisto(perfil); perfil.regiones ||= {};
-    for (const n of this.npcs) { if (n.rol === 'pulpero') n.mod = 'm_pulpero'; else if (n.rol === 'herrero') n.mod = 'h_asador'; else if (n.rol === 'posta') n.mod = 'm_mercachifle'; else { const i = {vecino: 0, baqueano: 1, cantor: 2}[n.rol]; let ch = GENTE[n.reg][i]; if (ch === perfil.ch) ch = REEMPLAZO.find(c => c !== perfil.ch); n.ch = ch; n.mod = 'h_' + ch; } }
+    this.ambiente.empezar(); this.burbujas = []; this.paraje = null;
+    for (const n of this.npcs) { if (n.rol === 'campo') continue; const nb = NOMBRES[n.reg]?.[{vecino: 0, baqueano: 1, cantor: 2}[n.rol]]; if (nb) [n.nom, n.titulo] = nb; else { n.nom = {pulpero: 'El pulpero', herrero: 'El herrero', posta: 'El mercachifle'}[n.rol]; n.titulo = n.nom.replace(/^El /, '') + ' de ' + REG[n.reg].pueblo.n; }
+      if (n.rol === 'pulpero') n.mod = 'm_pulpero'; else if (n.rol === 'herrero') n.mod = 'h_asador'; else if (n.rol === 'posta') n.mod = 'm_mercachifle'; else { const i = {vecino: 0, baqueano: 1, cantor: 2}[n.rol]; let ch = GENTE[n.reg][i]; if (ch === perfil.ch) ch = REEMPLAZO.find(c => c !== perfil.ch); n.ch = ch; n.mod = 'h_' + ch; } }
     for (const n of this.npcs) if (n.rol === 'herrero' && perfil.ch === 'asador') n.mod = 'h_gaucho';
     this.mundo.decorar(this.yo.x, this.yo.z, true);
   }
@@ -120,8 +125,9 @@ export class Juego {
     p.bestiario[m.tipo] = (p.bestiario[m.tipo] || 0) + 1;
     if (p.bestiario[m.tipo] === 10) this.ui.toast(`Ya volteaste diez de ${(ENEMIES[m.tipo] || BOSSES[m.tipo] || {}).n || m.tipo}: aprendiste sus mañas (+1 maña).`, 'libro', 4);
     if (m.jefe) { this.fama(40); if (JEFE_MONTURA[m.reg]) this.vida.dar(JEFE_MONTURA[m.reg]); } else if (m.camp) this.fama(8);
+    if (m.jefe && RELIQ[m.reg] && !p.reliq[m.reg] && TRATOS[m.reg] && !(p.tratos ||= {})[m.reg]) setTimeout(() => this.ui.forastero(m.reg), 5000);
     if (m.jefe && RELIQ[m.reg] && !p.reliq[m.reg]) { p.reliq[m.reg] = 1; this.ui.toast(`¡${RELIQ[m.reg].n}! (${Object.keys(p.reliq).length} de 8 reliquias)`, RELIQ[m.reg].ic, 6); audio.play('win'); }
-    if (m.jefe && m.reg === 'salamanca') { p.fin = (p.fin || 0) + 1; this.ui.final(); }
+    if (m.jefe && m.reg === 'salamanca') { p.fin = (p.fin || 0) + 1; if (!p.final && (p.pactos || 0) >= 3) setTimeout(() => this.ui.forastero('final'), 2500); else { p.final ||= 'libre'; this.ui.final(); } }
     this.ui.misiones.alMatar(m);
     this.xp(m.xp);
     this.ui.guardar();
@@ -157,7 +163,8 @@ export class Juego {
   update(dt, c) {
     this.t += dt; const t = this.t, y = this.yo, s = this.stats();
     this.mirar(dt, c); if (c.cam) this.cambiarVista(); if (c.caballo && !this.ui.pausa) this.vida.silbar();
-    this.vida.update(dt, c); this.eventos.update(dt); if (!this.ui.pausa) this.pesca.update(dt, c);
+    this.vida.update(dt, c); this.eventos.update(dt); this.ui.misiones.update(dt); this.ambiente.update(dt);
+    for (let i = this.burbujas.length - 1; i >= 0; i--) if ((this.burbujas[i].t += dt) > this.burbujas[i].dur) this.burbujas.splice(i, 1); if (!this.ui.pausa) this.pesca.update(dt, c);
     if (y.vivo && !this.ui.pausa && !this.vida.doma && !this.eventos.abd && !this.pesca.e) this.manejar(dt, c, s);
     this.expT = (this.expT || 0) - dt; if (this.expT <= 0) { this.expT = .5; this.explorar(); }
     // vida
@@ -194,7 +201,7 @@ export class Juego {
     if (this.vista !== 'arriba') { const yaw = this.cam.yaw, fx = Math.sin(yaw), fz = Math.cos(yaw), mx = c.mx, mz = c.mz; c = {...c, mx: -fz * mx - fx * mz, mz: fx * mx - fz * mz}; }
     if (y.dash) {
       const d = y.dash; d.t += dt; const k = Math.min(dt, Math.max(0, d.dur - (d.t - dt))) / d.dur; const ox = y.x, oz = y.z; y.x += d.dx * d.dist * k; y.z += d.dz * d.dist * k;
-      if (!this.chocarYo(y, true, d.libre)) { y.x = ox; y.z = oz; } this.puerta(y, ox, oz);
+      if (!this.chocarYo(y, true, d.libre, ox, oz)) { y.x = ox; y.z = oz; } this.puerta(y, ox, oz);
       if (d.hit) this.golpeLinea(d, ox, oz, s); if (t % .05 < dt) this.parts.burst(y.x, .3, y.z, 2, [.8, .75, .6], {type: 2, sp: 1, size: .6, life: .4, grow: 1});
       if (d.t >= d.dur) { y.dash = null; d.fin?.(); } y.mv = 1; y.ph += dt * 14; return;
     }
@@ -204,7 +211,7 @@ export class Juego {
       y.x += c.mx * sp * dt; y.z += c.mz * sp * dt;
       // los bichos no se atraviesan
       for (const b of this.bichos.values()) { if (b.muere || b.fly) continue; const dx = y.x - b.x, dz = y.z - b.z, R = b.r + .5, d2 = dx * dx + dz * dz; if (d2 < R * R && d2 > 1e-4) { const d = Math.sqrt(d2); y.x = b.x + dx / d * R; y.z = b.z + dz / d * R; } }
-      if (!this.chocarYo(y)) { y.x = ox; y.z = oz; } this.puerta(y, ox, oz);
+      if (!this.chocarYo(y, false, false, ox, oz)) { y.x = ox; y.z = oz; } this.puerta(y, ox, oz);
       if (M?.fuego && t % .22 < dt) this.zonas.push({x: y.x - Math.sin(y.ry) * 1.3, z: y.z - Math.cos(y.ry) * 1.3, r: 1.5, t: 2.2, dmg: s.dmg * .35, tick: 0, cada: .45, aura: 1, me: true, col: [1, .45, .1]});
       if (this.vista === 'fp') y.ry = this.cam.yaw; else if (!c.atk || c.mouse == null) y.ry = lerpA(y.ry, Math.atan2(c.mx, c.mz), Math.min(1, dt * (y.montado ? 8 : 14)));
       y.ph += dt * (y.montado ? 7 : 11) * sp / 6.2; if (y.montado && t % .12 < dt) this.parts.burst(y.x - Math.sin(y.ry) * 1.2, .2, y.z - Math.cos(y.ry) * 1.2, 2, [.75, .65, .5], {type: 2, sp: 1.5, size: .7, life: .5, grow: 1}); if (aq > .1 && !M?.vuela && t % .25 < dt) this.parts.burst(y.x, .1, y.z, 3, [.7, .85, 1], {sp: 2, size: .2, life: .4});
@@ -379,6 +386,7 @@ export class Juego {
   lugar() {
     const y = this.yo, r = regionEn(y.x, y.z), pu = enPueblo(y.x, y.z);
     if (r !== this.region) { this.region = r; const R = REG[r]; this.ui.zona(R, r); if (!this.jefeB) audio.track(R.tr); const p = this.p; if (!p.regiones[r]) { p.regiones[r] = 1; if (Object.keys(p.regiones).length > 1) { this.fama(10); this.xp(Math.round(xpSig(Math.max(p.lv, R.lv[0])) * .08)); setTimeout(() => this.ui.toast(`Descubriste ${R.n}`, 'libro', 3), 1800); } } }
+    const pj = parajeEn(y.x, y.z, r); if (pj && pj.id !== this.paraje) { this.paraje = pj.id; this.ui.paraje(pj); const vp = (p => p.parajes ||= {})(this.p); if (!vp[pj.id]) { vp[pj.id] = 1; if (Object.keys(vp).length > 1) { this.xp(Math.max(5, Math.round(xpSig(Math.max(this.p.lv, pj.lv[0])) * .025))); this.fama(2); this.ui.toast('Descubriste: ' + pj.n, 'libro', 2.5); } } }
     if (pu?.id !== this.pueblo) { this.pueblo = pu?.id || null; if (pu) { const nuevo = !this.p.pueblos[pu.id]; this.p.pueblos[pu.id] = 1; this.p.fogon = pu.id; this.ui.toast(nuevo ? `Llegaste a ${pu.n}. Ya podés viajar acá desde cualquier fogón.` : pu.n, 'brasa', nuevo ? 4 : 2); this.ui.misiones.llega?.(pu.id); this.ui.guardar(); } }
   }
   interaccion(c) {
@@ -388,7 +396,7 @@ export class Juego {
     for (const l of LUGARES) { if (Math.abs(l.x - y.x) > 5 || Math.abs(l.z - y.z) > 5) continue; const d = Math.hypot(l.x - y.x, l.z - y.z) - 1; if (d < bd) { bd = d; best = {tipo: l.tipo, ref: l}; } }
     const cand = (tipo, ref, d) => { if (d < bd) { bd = d; best = {tipo, ref}; } };
     for (const o of this.aljibes) if (Math.abs(o.x - y.x) < 4 && Math.abs(o.z - y.z) < 4) cand('aljibe', o, Math.hypot(o.x - y.x, o.z - y.z) - 1);
-    if (!this.vida.doma && !this.eventos.abd) { this.vida.candidatos(cand); this.eventos.candidatos(cand); this.pesca.candidatos(cand); }
+    if (!this.vida.doma && !this.eventos.abd) { this.vida.candidatos(cand); this.eventos.candidatos(cand); this.pesca.candidatos(cand); this.ui.misiones.candidatos(cand); }
     this.cerca = best; this.ui.cerca(best);
     if (best && c.usar && y.vivo) this.ui.usar(best);
   }
@@ -397,10 +405,10 @@ export class Juego {
   montura() { return this.yo?.montado === true ? MONTURAS[this.p.montura] : null; }
   vueloDash(y) { const d = y.dash; if (!d) return 0; const k = Math.sin(Math.min(1, d.t / d.dur) * Math.PI); return d.baja ? -(this.montura()?.vuela || 0) * k : d.vuela ? k * 3 * d.vuela : 0; }
   // choques: el cóndor y los saltos altos pasan por arriba de todo; el yacaré nada en lo hondo
-  chocarYo(y, salta, libre) {
+  chocarYo(y, salta, libre, ox, oz) {
     const M = this.montura();
     if (libre || M?.vuela) { const [o, e] = bordeX(y.z); y.x = clamp(y.x, o + 2, e - 2); y.z = clamp(y.z, NORTE + 2, SUR - 2); if (!RELIQUIAS.every(r => this.p.reliq[r])) { const dx = y.x - SALA.x, dz = y.z - SALA.z, d = Math.hypot(dx, dz); if (d < SALA.r + 3) { y.x = SALA.x + dx / (d || 1) * (SALA.r + 3); y.z = SALA.z + dz / (d || 1) * (SALA.r + 3); } } return true; }
-    if (chocar(y, .55, salta)) return true;
+    if (chocar(y, .55, salta, ox, oz, M?.trepa)) return true;
     if (M?.nada) { const [, e] = bordeX(y.z); return y.x < e - 1; }
     return false;
   }
@@ -429,17 +437,21 @@ export class Juego {
   foco() { const y = this.yo; if (this.vista === 'arriba') return this.cam; const f = this.vista === 'fp' ? 18 : 13; return {x: y.x + Math.sin(this.cam.yaw) * f, z: y.z + Math.cos(this.cam.yaw) * f}; }
   camara(dt) {
     const y = this.yo, c = this.cam, por = innerHeight > innerWidth; const D = por ? 33 : 27;
+    const gy = alto(y.x, y.z); y.gy = y.gy == null ? gy : lerp(y.gy, gy, Math.min(1, dt * 14)); this.plano.constant = -y.gy;
     if (this.vista !== 'arriba') {
       c.x = lerp(c.x, y.x, Math.min(1, dt * 12)); c.z = lerp(c.z, y.z, Math.min(1, dt * 12)); const sh = c.sh * c.sh * .5; c.sh = Math.max(0, c.sh - dt * 1.8);
       const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw), cp = Math.cos(c.pitch), sp = Math.sin(c.pitch), MM = this.montura(), alto = (MM ? MM.alto + (this.vista === 'fp' ? .5 : 0) + (MM.vuela || 0) : 0) + this.eventos.altura() + this.vueloDash(y);
-      if (this.vista === 'fp') { const bob = y.mv * Math.sin(y.ph * (y.montado ? 1 : 2)) * (y.montado ? .09 : .045), e = 1.62 + alto + bob + (y.vivo ? 0 : -1.2); const adel = y.montado ? -.4 : .18; this.camera.position.set(c.x + fx * adel + rnd(-sh, sh), e + rnd(-sh, sh), c.z + fz * adel + rnd(-sh, sh)); this.camera.lookAt(this.camera.position.x + fx * cp, e + sp, this.camera.position.z + fz * cp); }
-      else { const dd = MM?.vuela ? 9 : y.montado ? 7.5 : 6.2, hx = c.x, hz = c.z, hy = 1.7 + alto; const px = hx - fx * cp * dd, pz = hz - fz * cp * dd, py = Math.max(.6, hy - sp * dd + .6); this.camera.position.set(px + rnd(-sh, sh), py + rnd(-sh, sh), pz + rnd(-sh, sh)); this.camera.lookAt(hx + fx * 2.5, hy + sp * 2.5, hz + fz * 2.5); }
+      if (this.vista === 'fp') { const bob = y.mv * Math.sin(y.ph * (y.montado ? 1 : 2)) * (y.montado ? .09 : .045), e = 1.62 + alto + bob + (y.vivo ? 0 : -1.2) + y.gy; const adel = y.montado ? -.4 : .18; this.camera.position.set(c.x + fx * adel + rnd(-sh, sh), e + rnd(-sh, sh), c.z + fz * adel + rnd(-sh, sh)); this.camera.lookAt(this.camera.position.x + fx * cp, e + sp, this.camera.position.z + fz * cp); }
+      else { const dd = MM?.vuela ? 9 : y.montado ? 7.5 : 6.2, hx = c.x, hz = c.z, hy = 1.7 + alto + y.gy; const px = hx - fx * cp * dd, pz = hz - fz * cp * dd, py = Math.max(this.altoCam(px, pz) + .8, hy - sp * dd + .6); this.camera.position.set(px + rnd(-sh, sh), py + rnd(-sh, sh), pz + rnd(-sh, sh)); this.camera.lookAt(hx + fx * 2.5, hy + sp * 2.5, hz + fz * 2.5); }
       return;
     }
     c.x = lerp(c.x, y.x, Math.min(1, dt * 6)); c.z = lerp(c.z, y.z, Math.min(1, dt * 6)); c.d = lerp(c.d, D * (this.jefeB ? 1.12 : 1), Math.min(1, dt * 2));
-    const el = .88, sh = c.sh * c.sh * .8; c.sh = Math.max(0, c.sh - dt * 1.8);
-    this.camera.position.set(c.x + rnd(-sh, sh), Math.sin(el) * c.d + rnd(-sh, sh), c.z + Math.cos(el) * c.d + rnd(-sh, sh)); this.camera.lookAt(c.x, .6, c.z - (por ? 1.5 : 0));
+    const el = .88, sh = c.sh * c.sh * .8; c.sh = Math.max(0, c.sh - dt * 1.8); c.h = c.h == null ? y.gy : lerp(c.h, y.gy, Math.min(1, dt * 4));
+    this.camera.position.set(c.x + rnd(-sh, sh), Math.sin(el) * c.d + c.h + rnd(-sh, sh), c.z + Math.cos(el) * c.d + rnd(-sh, sh)); this.camera.lookAt(c.x, .6 + c.h, c.z - (por ? 1.5 : 0));
   }
+  // algo que dice alguien, en un globito arriba de la cabeza
+  burbuja(o, txt, dur = 4.5) { this.burbujas = this.burbujas.filter(b => b.o !== o); this.burbujas.push({o, txt, t: 0, dur}); if (this.burbujas.length > 5) this.burbujas.shift(); }
+  altoCam(x, z) { let h = alto(x, z); for (const [a, b] of [[1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]]) h = Math.max(h, alto(x + a, z + b)); return h; }
   // ---------- dibujar ----------
   dibujar(dt) {
     for (const k in this.B) this.B[k].begin();
@@ -454,8 +466,8 @@ export class Juego {
     // otros jugadores
     for (const o of this.otros.values()) { const g2 = o.fu ? [1, .2, .1] : o.es ? [.3, .6, 1] : [0, 0, 0]; const OM = MONTURAS[ORDEN_M[o.ca - 1]]; if (OM) this.bt(OM.mod, 40).push(o.x, OM.vuela || 0, o.z, o.ry, OM.s, o.ph * .7, OM.vuela ? 1 : o.mv); this.bt('h_' + o.ch).push(o.x, OM ? OM.alto + (OM.vuela || 0) : o.d ? .25 : 0, o.z, o.ry, 1, o.ph, o.mv, o.at * o.at, 0, g2[0], g2[1], g2[2], o.hp <= 0 ? .7 : 0, o.hp <= 0 ? -1.3 : 0); this.fx.draw(FX.SHADOW, o.x, .05, o.z, 0, .9, .9, [0, 0, 0], .5); }
     // gente de los pueblos
-    for (const n of this.npcs) { if (Math.abs(n.x - y.x) > 60 || Math.abs(n.z - y.z) > 60) continue; const look = Math.hypot(n.x - y.x, n.z - y.z) < 7 ? Math.atan2(y.x - n.x, y.z - n.z) : n.ry; n.ryv = n.ryv == null ? look : n.ryv + ang(look, n.ryv) * Math.min(1, dt * 4); this.bt(n.mod, 24).push(n.x, 0, n.z, n.ryv, 1, n.anda ? t * 8 : t + n.x, n.anda ? 1 : 0, 0); }
-    this.vida.dibujar(); this.eventos.dibujar(dt); this.pesca.dibujar();
+    for (const n of this.npcs) { if (Math.abs(n.x - y.x) > 60 || Math.abs(n.z - y.z) > 60) continue; const look = Math.hypot(n.x - y.x, n.z - y.z) < 7 ? Math.atan2(y.x - n.x, y.z - n.z) : n.ry; n.ryv = n.ryv == null ? look : n.ryv + ang(look, n.ryv) * Math.min(1, dt * 4); this.bt(n.mod, 24).push(n.x, 0, n.z, n.ryv, n.s || 1, n.anda ? t * 8 : t + n.x, n.anda ? 1 : 0, 0); }
+    this.ui.misiones.dibujar(); this.ambiente.dibujar(); this.vida.dibujar(); this.eventos.dibujar(dt); this.pesca.dibujar();
     // bichos
     for (const b of this.bichos.values()) {
       if (Math.abs(b.x - y.x) > 70 || Math.abs(b.z - y.z) > 70) continue; const tint = b.camp ? [1, .75, .15] : b.jefe ? [0, 0, 0] : [0, 0, 0];
