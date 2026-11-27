@@ -52,7 +52,7 @@ export function leer() {
   if (ctl.joy.on) { mx = ctl.joy.x; mz = ctl.joy.z; }
   const s = {mx, mz, atk: mouse.btn || k('KeyK') || !!ctl.btn.atk, h: [d('KeyQ') || d('Digit1') || !!ctl.bdn.h0, d('KeyE') || d('Digit2') || !!ctl.bdn.h1, d('KeyR') || d('Digit3') || !!ctl.bdn.h2],
     esq: d('Space') || d('ShiftLeft') || d('Mouse2') || !!ctl.bdn.esq, mate: d('KeyH') || d('Digit4') || !!ctl.bdn.mate, usar: d('KeyF') || !!ctl.bdn.usar,
-    mapa: d('KeyM'), inv: d('KeyI') || d('Tab'), mis: d('KeyL'), chat: d('Enter') || d('KeyT'), esc: d('Escape'), mouse: mouse.on && !ctl.tactil && !document.pointerLockElement && performance.now() - mouse.mov < 60000 ? mouse : null, pad: false,
+    mapa: d('KeyM'), prog: d('KeyP'), inv: d('KeyI') || d('Tab'), mis: d('KeyL'), chat: d('Enter') || d('KeyT'), esc: d('Escape'), mouse: mouse.on && !ctl.tactil && !document.pointerLockElement && performance.now() - mouse.mov < 60000 ? mouse : null, pad: false,
     cam: d('KeyV') || !!ctl.bdn.cam, caballo: d('KeyG') || !!ctl.bdn.caballo, look: {dx: look.dx, dy: look.dy}, stick: [0, 0], trabado: !!document.pointerLockElement};
   look.dx = look.dy = 0;
   for (const p of pads()) {

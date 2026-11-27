@@ -10,6 +10,9 @@ import {Misiones, MIS} from './misiones.js';
 import {ctl, botones} from './controles.js';
 import {via} from './red.js';
 import {RES} from './mundo3d.js';
+import {RAMAS, MAX_RANGO, TITULOS, rangoFama, titulo, descuento, manasGanadas, manasGastadas, manasLibres, EXPLORA, visto, explorado, HITOS_EXPLORA} from './progreso.js';
+import {MONTURAS, ORDEN_M} from './vida.js';
+import {TODOS_PECES} from './pesca.js';
 
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -43,7 +46,7 @@ export class UI {
     this.icon = hacerIconos(); this.misiones = new Misiones(this); this.datos = this.cargar(); this.pausa = false; this.panel = null; this.toasts = []; this.track = null;
     this.ov = $('#ov'); this.cx = this.ov.getContext('2d'); this.mini = $('#mini'); this.mcx = this.mini.getContext('2d');
     botones(document.body);
-    $('#bmapa').onclick = () => this.mapa(); $('#binv').onclick = () => this.inventario(); $('#bmis').onclick = () => this.listaMis(); $('#bop').onclick = () => this.opciones(); $('#bchat').onclick = () => this.abrirChat();
+    $('#bmapa').onclick = () => this.mapa(); $('#bprog').onclick = () => this.progreso(); $('#binv').onclick = () => this.inventario(); $('#bmis').onclick = () => this.listaMis(); $('#bop').onclick = () => this.opciones(); $('#bchat').onclick = () => this.abrirChat();
     $('#seg').onclick = () => this.listaMis(); $('#mini').onclick = () => this.mapa();
     const ci = $('#chatin'); ci.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { const v = ci.value.trim(); if (v) this.red.manda({t: 'chat', m: v}); ci.value = ''; ci.hidden = true; ci.blur(); } if (e.key === 'Escape') { ci.hidden = true; ci.blur(); } });
     this.imgMapa();
@@ -115,16 +118,17 @@ export class UI {
     const p = this.perfil, K = KITS[p.ch];
     $('#cara').src = this.icon('h_' + p.ch); $('#nom2').textContent = p.nombre;
     const slot = (k, ic, key, lab) => `<button class="hab" data-b="${k}" aria-label="${esc(lab)}"><img alt="" src="${ic}"><i></i><kbd>${key}</kbd><em></em></button>`;
-    $('#habs').innerHTML = slot('atk', this.icon(icoHab(K.basico)), 'Clic', 'Atacar') + K.h.map((h, i) => slot('h' + i, this.icon(icoHab(h.ef[0])), 'QER'[i], h.n)).join('') + slot('esq', this.icon('espuela'), 'Espacio', 'Esquivar') + slot('mate', this.icon('mate'), 'H', 'Tomar mate') + (p.caballo ? slot('caballo', this.icon('herradura'), 'G', 'Caballo: ' + p.caballo.n) : '');
+    $('#habs').innerHTML = slot('atk', this.icon(icoHab(K.basico)), 'Clic', 'Atacar') + K.h.map((h, i) => slot('h' + i, this.icon(icoHab(h.ef[0])), 'QER'[i], h.n)).join('') + slot('esq', this.icon('espuela'), 'Espacio', 'Esquivar') + slot('mate', this.icon('mate'), 'H', 'Tomar mate') + (p.montura && p.monturas?.[p.montura] ? slot('caballo', this.icon(MONTURAS[p.montura].ic), 'G', 'Montura: ' + p.monturas[p.montura].n) : '');
     botones($('#habs'));
   }
   hud() {
     const j = this.juego, p = this.perfil, y = j.yo, s = j.stats(), K = KITS[p.ch]; if (!y) return;
     const vp = Math.max(0, y.hp / s.vida); $('#vida i').style.width = vp * 100 + '%'; $('#vida span').textContent = `${Math.ceil(y.hp)} / ${Math.round(s.vida)}`; $('#vida').classList.toggle('baja', vp < .3);
-    $('#xpb i').style.width = (p.lv >= NIVEL_MAX ? 100 : p.xp / xpSig(p.lv) * 100) + '%'; $('#niv').textContent = 'Nivel ' + p.lv; $('#oro').textContent = p.oro + ' $';
+    $('#xpb i').style.width = (p.lv >= NIVEL_MAX ? 100 : p.xp / xpSig(p.lv) * 100) + '%'; $('#niv').textContent = 'Nivel ' + p.lv + ' · ' + titulo(p);
+    const ml = manasLibres(p); if (ml !== this.mlAnt) { this.mlAnt = ml; const bi = $('#bprog i'); bi.hidden = ml <= 0; bi.textContent = ml; } $('#oro').textContent = p.oro + ' $';
     const bs = $('#habs').children; if (!bs.length) return;
     const cd = (el, v, max, bloq) => { el.querySelector('i').style.height = (bloq ? 100 : max ? v / max * 100 : 0) + '%'; el.classList.toggle('bloq', !!bloq); const em = el.querySelector('em'); em.textContent = bloq ? 'Nv ' + bloq : v > .9 ? Math.ceil(v) : ''; };
-    cd(bs[0], y.cdB, K.basico.cd); for (let i = 0; i < 3; i++) cd(bs[i + 1], y.cd[i], K.h[i].cd * s.cdr, p.lv < DESBLOQUEO[i] ? DESBLOQUEO[i] : 0); cd(bs[4], y.esq, 1.1); bs[5].querySelector('em').textContent = p.inv.mate || 0; bs[5].classList.toggle('bloq', !(p.inv.mate > 0));
+    cd(bs[0], y.cdB, K.basico.cd); for (let i = 0; i < 3; i++) cd(bs[i + 1], y.cd[i], K.h[i].cd * s.cdr, p.lv < DESBLOQUEO[i] ? DESBLOQUEO[i] : 0); cd(bs[4], y.esq, y.esqMax || 1.1); bs[5].querySelector('em').textContent = p.inv.mate || 0; bs[5].classList.toggle('bloq', !(p.inv.mate > 0));
     const h = j.horaAhora(); $('#reloj').textContent = esNoche(h) ? '☾ Noche' : '☀ Día'; $('#red').textContent = this.red.modo === 'solo' ? 'Solo' : this.red.estado === 'conectado' ? `${(j.lista?.length || 1)} en el mundo` : 'Reconectando…';
   }
   zona(R, k) { $('#zona b').textContent = R.n; $('#zona span').textContent = `Nivel ${R.lv[0]}–${R.lv[1]}`; this.cartel(R.n, k === 'salamanca' ? 'La cueva de Mandinga' : `${R.sub} · Nivel ${R.lv[0]} a ${R.lv[1]}`); }
@@ -144,7 +148,7 @@ export class UI {
     const u = $('#usar'); const k = c ? (c.tipo === 'npc' ? c.ref.id : c.tipo + (c.ref.id ?? '')) : ''; if (k === this.cercaK) return; this.cercaK = k;
     if (!c) { u.hidden = true; return; } u.hidden = false;
     const t = {npc: () => `Hablar con ${this.nombreNpc(c.ref)}`, fogon: () => 'Fogón: descansar y viajar', santuario: () => 'Prenderle una vela al Gauchito', difunta: () => 'Dejarle agua a la Difunta Correa', entierro: () => 'Cavar', apacheta: () => 'Dejar una piedra en la apacheta',
-      aljibe: () => 'Tomar agua del aljibe', bagual: () => 'Domar al bagual', caballo: () => `Subirte a ${this.perfil.caballo?.n || 'tu caballo'}`, gente: () => `Charlar con ${CHARS[c.ref.ch]?.n || 'el vecino'}`, perro: () => 'Acariciar al perro', tesoro: () => 'Cavar el entierro de la Luz Mala', carreta: () => 'Comprarle al mercachifle'}[c.tipo]();
+      aljibe: () => 'Tomar agua del aljibe', bagual: () => ({caballo: 'Domar al bagual', vaca: 'Jinetear la vaca', vicuna: 'Domar la vicuña'}[c.ref.k] || 'Domar'), caballo: () => `Subirte a ${this.perfil.monturas?.[c.ref.k]?.n || 'tu montura'}`, pesca: () => 'Pescar', gente: () => `Charlar con ${CHARS[c.ref.ch]?.n || 'el vecino'}`, perro: () => 'Acariciar al perro', tesoro: () => 'Cavar el entierro de la Luz Mala', carreta: () => 'Comprarle al mercachifle'}[c.tipo]();
     u.innerHTML = `<kbd>F</kbd><span>${esc(t)}</span>`;
   }
   nombreNpc(n) { if (n.ch) return CHARS[n.ch].n; return {pulpero: 'el pulpero', herrero: 'el herrero', posta: 'el mercachifle'}[n.rol] || ROL[n.rol]; }
@@ -154,6 +158,7 @@ export class UI {
     if (c.tipo === 'fogon') return this.fogon(c.ref);
     if (['bagual', 'caballo', 'gente', 'perro'].includes(c.tipo)) return j.vida.usar(c);
     if (['tesoro', 'carreta'].includes(c.tipo)) return j.eventos.usar(c);
+    if (c.tipo === 'pesca') return j.pesca.empezar(c.ref);
     if (c.tipo === 'aljibe') { const k = 'aljibe' + Math.round(c.ref.x) + ',' + Math.round(c.ref.z); if ((j.lugCd[k] || -1e9) > t) { this.toast('Ya tomaste. Esperá un ratito.', 'agua', 1.5); return; } j.lugCd[k] = t + 45; j.curar(.3); audio.play('splash'); j.parts.burst(c.ref.x, 1, c.ref.z, 14, [.6, .8, 1], {sp: 3, size: .3, life: .6}); this.toast('Agua fresquita del aljibe.', 'agua', 2); return; }
     const id = c.tipo + c.ref.id; if ((j.lugCd[id] || -1e9) > t) { this.toast('Ya hiciste tu promesa acá. Volvé más tarde.', null, 2); return; }
     if (c.tipo === 'santuario') { j.lugCd[id] = t + 180; j.curar(1); j.yo.buff.santo = t + 300; this.toast('Le prendiste una vela al Gauchito Gil: +10% de daño por 5 minutos.', 'vela', 4); }
@@ -192,18 +197,18 @@ export class UI {
       if (b.dataset.v) { const o = PUEBLOS.find(x => x.id === b.dataset.v), c = costo(o); if (p.oro < c) { this.toast('No te alcanza la plata.', 'plata', 2); return; } p.oro -= c; j.yo.x = o.x + 2; j.yo.z = o.z + 5; j.cam.x = j.yo.x; j.cam.z = j.yo.z; j.yo.inv = j.t + 2; j.enviar(true); this.cerrarPanel(); this.toast('Llegaste a ' + o.n, 'brasa', 2.5); audio.play('whistle'); this.guardar(); } };
   }
   tienda(tipo, stock) {
-    const p = this.perfil, j = this.juego, w = WEAPONS[CHARS[p.ch].w]?.n || 'Arma';
+    const p = this.perfil, j = this.juego, w = WEAPONS[CHARS[p.ch].w]?.n || 'Arma', precio = v => Math.round(v * (1 - descuento(p)));
     const pint = () => {
       let h = '';
-      if (tipo === 'carreta') h = `<h2>La carreta del mercachifle</h2><p class="tip">Tenés ${p.oro} $. Lo que trae hoy, mañana quién sabe.</p><div class="lst">${stock.am.map(o => `<div class="fila2"><img alt="" src="${this.icon(AMULETOS[o.k].ic)}"><div><b>${AMULETOS[o.k].n}</b><span>${AMULETOS[o.k].d}${p.amuletos[o.k] ? ` Tenés ${p.amuletos[o.k]}.` : ''}</span></div><button class="btn" data-ca="${o.k}" data-p="${o.precio}">${o.precio} $</button></div>`).join('')}${stock.it.map(o => `<div class="fila2"><img alt="" src="${this.icon(OBJETOS[o.k].ic)}"><div><b>${OBJETOS[o.k].n}</b><span>${OBJETOS[o.k].d} Tenés ${p.inv[o.k] || 0}.</span></div><button class="btn" data-ci="${o.k}" data-p="${o.precio}">${o.precio} $</button></div>`).join('')}</div>`;
-      if (tipo === 'pulperia') h = `<h2>Pulpería</h2><p class="tip">Tenés ${p.oro} $.</p><div class="lst">${['mate', 'asado', 'cana'].map(k => `<div class="fila2"><img alt="" src="${this.icon(OBJETOS[k].ic)}"><div><b>${OBJETOS[k].n}</b><span>${OBJETOS[k].d} Tenés ${p.inv[k] || 0}.</span></div><button class="btn" data-c="${k}">${OBJETOS[k].precio} $</button></div>`).join('')}</div>`;
+      if (tipo === 'carreta') h = `<h2>La carreta del mercachifle</h2><p class="tip">Tenés ${p.oro} $. Lo que trae hoy, mañana quién sabe.</p><div class="lst">${stock.am.map(o => `<div class="fila2"><img alt="" src="${this.icon(AMULETOS[o.k].ic)}"><div><b>${AMULETOS[o.k].n}</b><span>${AMULETOS[o.k].d}${p.amuletos[o.k] ? ` Tenés ${p.amuletos[o.k]}.` : ''}</span></div><button class="btn" data-ca="${o.k}" data-p="${precio(o.precio)}">${precio(o.precio)} $</button></div>`).join('')}${stock.it.map(o => `<div class="fila2"><img alt="" src="${this.icon(OBJETOS[o.k].ic)}"><div><b>${OBJETOS[o.k].n}</b><span>${OBJETOS[o.k].d} Tenés ${p.inv[o.k] || 0}.</span></div><button class="btn" data-ci="${o.k}" data-p="${precio(o.precio)}">${precio(o.precio)} $</button></div>`).join('')}</div>`;
+      if (tipo === 'pulperia') h = `<h2>Pulpería</h2><p class="tip">Tenés ${p.oro} $.${descuento(p) ? ` Por ser ${titulo(p)} te hacen ${Math.round(descuento(p) * 100)}% de descuento.` : ''}</p><div class="lst">${['mate', 'asado', 'cana'].map(k => `<div class="fila2"><img alt="" src="${this.icon(OBJETOS[k].ic)}"><div><b>${OBJETOS[k].n}</b><span>${OBJETOS[k].d} Tenés ${p.inv[k] || 0}.</span></div><button class="btn" data-c="${k}">${precio(OBJETOS[k].precio)} $</button></div>`).join('')}</div>`;
       if (tipo === 'herreria') { const fila = (k, n, g) => { if (g >= 6) return `<div class="fila2"><div><b>${n} ${GRADOS[g - 1]}</b><span>Ya está al máximo.</span></div></div>`; const c = costoMejora(g); const ok = p.oro >= c.oro && (p.inv.retazo || 0) >= c.retazos && p.lv >= c.nivel; return `<div class="fila2"><div><b>${n}: ${GRADOS[g - 1]} → ${GRADOS[g]}</b><span>${c.oro} $ y ${c.retazos} retazos de leyenda${p.lv < c.nivel ? ` · necesitás nivel ${c.nivel}` : ''}. Tenés ${p.inv.retazo || 0} retazos.</span></div><button class="btn" data-m="${k}" ${ok ? '' : 'disabled'}>Mejorar</button></div>`; };
         h = `<h2>Herrería</h2><p class="tip">Tenés ${p.oro} $. Cada mejora del arma suma 30% de daño; la del poncho, vida y aguante.</p><div class="lst">${fila('arma', w, p.arma)}${fila('poncho', 'Poncho', p.poncho)}</div>`; }
       if (tipo === 'mercachifle') { const ks = Object.keys(p.amuletos).filter(k => p.amuletos[k] > (p.amuleto === k ? 1 : 0)); h = `<h2>Mercachifle</h2><p class="tip">Te compro los amuletos que te sobran a 80 $ cada uno.</p><div class="lst">${ks.length ? ks.map(k => `<div class="fila2"><img alt="" src="${this.icon(AMULETOS[k].ic)}"><div><b>${AMULETOS[k].n} ×${p.amuletos[k]}</b><span>${AMULETOS[k].d}</span></div><button class="btn" data-v="${k}">Vender</button></div>`).join('') : '<p class="tip">No tenés amuletos para vender.</p>'}</div>`; }
       const e = this.abrir('tienda', h);
       e.onclick = ev => { const b = ev.target.closest('button'); if (!b || b.disabled) return;
         if (b.dataset.ca || b.dataset.ci) { const pr = +b.dataset.p; if (p.oro < pr) { this.toast('No te alcanza.', 'plata', 1.5); return; } p.oro -= pr; if (b.dataset.ca) { p.amuletos[b.dataset.ca] = (p.amuletos[b.dataset.ca] || 0) + 1; audio.play('gem'); } else { p.inv[b.dataset.ci] = (p.inv[b.dataset.ci] || 0) + 1; audio.play('coin'); } this.misiones.alEvento('carreta'); this.guardar(); pint(); return; }
-        if (b.dataset.c) { const o = OBJETOS[b.dataset.c]; if (p.oro < o.precio) { this.toast('No te alcanza.', 'plata', 1.5); return; } p.oro -= o.precio; p.inv[b.dataset.c] = (p.inv[b.dataset.c] || 0) + 1; audio.play('coin'); this.guardar(); pint(); }
+        if (b.dataset.c) { const o = OBJETOS[b.dataset.c], pr = precio(o.precio); if (p.oro < pr) { this.toast('No te alcanza.', 'plata', 1.5); return; } p.oro -= pr; p.inv[b.dataset.c] = (p.inv[b.dataset.c] || 0) + 1; audio.play('coin'); this.guardar(); pint(); }
         if (b.dataset.m) { const k = b.dataset.m, c = costoMejora(p[k]); p.oro -= c.oro; p.inv.retazo -= c.retazos; p[k]++; audio.play('evo'); this.toast(`${k === 'arma' ? w : 'Poncho'} ${GRADOS[p[k] - 1]}`, k === 'arma' ? icoHab(KITS[p.ch].basico) : 'poncho', 3); j.yo.hp = Math.min(j.yo.hp, j.stats().vida); this.guardar(); pint(); }
         if (b.dataset.v) { const k = b.dataset.v; p.amuletos[k]--; if (!p.amuletos[k]) delete p.amuletos[k]; p.oro += 80; audio.play('coin'); this.guardar(); pint(); } };
     };
@@ -214,10 +219,38 @@ export class UI {
     const e = this.abrir('inv', `<h2>${esc(p.nombre)} <small>${CHARS[p.ch].t} · nivel ${p.lv}</small></h2>
       <div class="dos"><div><h3>Equipo</h3><div class="lst"><div class="fila2"><img alt="" src="${this.icon(icoHab(K.basico))}"><div><b>${w}</b><span>${GRADOS[p.arma - 1]}</span></div></div><div class="fila2"><img alt="" src="${this.icon('poncho')}"><div><b>Poncho</b><span>${GRADOS[p.poncho - 1]}</span></div></div></div>
         <h3>Amuleto</h3><div class="lst">${Object.keys(p.amuletos).length ? Object.keys(p.amuletos).map(k => `<button class="fila2 ${p.amuleto === k ? 'on' : ''}" data-a="${k}"><img alt="" src="${this.icon(AMULETOS[k].ic)}"><div><b>${AMULETOS[k].n}${p.amuletos[k] > 1 ? ' ×' + p.amuletos[k] : ''}</b><span>${AMULETOS[k].d}${p.amuleto === k ? ' · Puesto' : ''}</span></div></button>`).join('') : '<p class="tip">Los amuletos salen de campeones, jefes y entierros.</p>'}</div></div>
-      <div><h3>Bolsa</h3><div class="lst">${['mate', 'asado', 'cana', 'retazo'].map(k => `<div class="fila2"><img alt="" src="${this.icon(OBJETOS[k].ic)}"><div><b>${OBJETOS[k].n} ×${p.inv[k] || 0}</b><span>${OBJETOS[k].d}</span></div>${OBJETOS[k].usa && p.inv[k] > 0 ? `<button class="btn" data-u="${k}">Usar</button>` : ''}</div>`).join('')}</div>
+      <div><h3>Bolsa</h3><div class="lst">${['mate', 'asado', 'cana', 'pescado', 'retazo'].map(k => `<div class="fila2"><img alt="" src="${this.icon(OBJETOS[k].ic)}"><div><b>${OBJETOS[k].n} ×${p.inv[k] || 0}</b><span>${OBJETOS[k].d}</span></div>${OBJETOS[k].usa && p.inv[k] > 0 ? `<button class="btn" data-u="${k}">Usar</button>` : ''}</div>`).join('')}</div>
         <p class="st">${p.oro} $ · Vida ${Math.round(s.vida)} · Daño ${Math.round(s.dmg)} · Aguante ${Math.round(s.arm * 100)}% · Crítico ${Math.round(s.crit * 100)}% · Velocidad ${s.vel.toFixed(1)}</p>
         <h3>Reliquias</h3><div class="reliq">${RELIQUIAS.map(r => `<span class="${p.reliq[r] ? 'si' : ''}" title="${p.reliq[r] ? RELIQ[r].n : REG[r].n}"><img alt="" src="${this.icon(RELIQ[r].ic)}"></span>`).join('')}</div></div></div>`, 'ancho');
     e.onclick = ev => { const b = ev.target.closest('button'); if (!b) return; if (b.dataset.a) { p.amuleto = p.amuleto === b.dataset.a ? null : b.dataset.a; audio.play('ok'); this.guardar(); this.inventario(); } if (b.dataset.u) { j.usar(b.dataset.u); this.inventario(); } };
+  }
+  // ---------- progreso: mañas, monturas y logros ----------
+  progreso(tab = this.tabProg || 'manas') {
+    this.tabProg = tab; const p = this.perfil, j = this.juego, libres = manasLibres(p), G = manasGanadas(p), olvido = 50 * p.lv;
+    const tabs = `<div class="tabs">${[['manas', 'Mañas' + (libres > 0 ? ` (${libres})` : '')], ['mont', 'Monturas'], ['logros', 'Logros']].map(([k, n]) => `<button class="btn ${k === tab ? '' : 'sec'}" data-tab="${k}">${n}</button>`).join('')}</div>`;
+    let h = '';
+    if (tab === 'manas') h = `<p class="tip">${libres > 0 ? `Tenés <b>${libres}</b> ${libres === 1 ? 'maña' : 'mañas'} para aprender.` : 'No tenés mañas para aprender.'} Se ganan subiendo de nivel (${G.nivel}), con la fama (${G.fama}), explorando el mapa (${G.expl}), volteando diez de cada leyenda (${G.best}) y pescando (${G.pesca}).</p>
+      <div class="ramas">${RAMAS.map(R => `<div class="rama"><h3>${R.n} <small>${R.d}</small></h3>${Object.entries(R.t).map(([k, t]) => { const r = p.manas?.[k] || 0; return `<div class="tal"><b>${t.n}</b><span>${r ? t.d(r) : 'Todavía no la sabés'}${r < MAX_RANGO ? ' → ' + t.d(r + 1) : ' (al máximo)'}</span><span class="pips">${'●'.repeat(r)}${'○'.repeat(MAX_RANGO - r)}</span><button class="btn" data-m="${k}" aria-label="Aprender ${t.n}" ${libres > 0 && r < MAX_RANGO ? '' : 'disabled'}>+</button></div>`; }).join('')}</div>`).join('')}</div>
+      ${manasGastadas(p) ? `<p class="tip">¿Te arrepentiste? <button class="btn sec" data-olvidar="1">Olvidar todas por ${olvido} $</button></p>` : ''}`;
+    if (tab === 'mont') h = `<p class="tip">Con G llamás a la que elegiste y te subís o te bajás. Arriba de la montura, Espacio usa su habilidad.</p>${ORDEN_M.map(k => { const M = MONTURAS[k], t = p.monturas?.[k]; return `<div class="mont ${t ? '' : 'no'} ${t && p.montura === k ? 'on' : ''}"><img alt="" src="${this.icon(M.ic)}"><b>${t ? esc(t.n) + (t.n !== M.n ? ` <small>· ${M.n}</small>` : '') : M.n}</b><span>${t ? `Velocidad ×${M.vel}. ${esc(M.hab)}.` : '🔒 ' + esc(M.como) + '.'}</span>${t ? `<button class="btn ${p.montura === k ? 'sec' : ''}" data-mo="${k}" ${p.montura === k ? 'disabled' : ''}>${p.montura === k ? 'Elegida' : 'Elegir'}</button>` : ''}</div>`; }).join('')}`;
+    if (tab === 'logros') {
+      const r = rangoFama(p.fama), sig = TITULOS[r + 1], pc = j.vistoB ? explorado(j.vistoB) : 0, hs = HITOS_EXPLORA.find(v => v > pc), especies = Object.keys(p.bestiario || {}), diez = especies.filter(k => p.bestiario[k] >= 10), peces = Object.keys(p.pesca || {}), mont = Object.keys(p.monturas || {}).length, mis = Object.values(p.mis || {}).filter(m => m.e === 'hecha').length;
+      const fila = (a, b) => `<div class="logro"><b>${a}</b><span>${b}</span></div>`;
+      h = fila(`Título: ${TITULOS[r][1]}`, `${p.fama || 0} de fama${sig ? ` · ${sig[1]} con ${sig[0]}` : ' · ¡el máximo!'}`)
+        + fila(`Exploración: ${Math.floor(pc)}%`, hs ? `próxima maña al ${hs}%` : 'recorriste todo')
+        + fila(`Bestiario: ${especies.length} leyendas`, `${diez.length} con diez o más (una maña cada una)`)
+        + fila(`Pesca: ${peces.length} de ${TODOS_PECES.length} peces`, peces.length ? esc(peces.join(', ')) : 'Buscá un río o una laguna y apretá F en la orilla')
+        + fila(`Monturas: ${mont} de ${ORDEN_M.length}`, mont ? ORDEN_M.filter(k => p.monturas[k]).map(k => esc(p.monturas[k].n)).join(', ') : 'Domá un bagual')
+        + fila(`Reliquias: ${Object.keys(p.reliq).filter(k => RELIQUIAS.includes(k)).length} de 8`, 'Una por cada jefe')
+        + fila(`Misiones cumplidas: ${mis}`, `Territorios descubiertos: ${Object.keys(p.regiones || {}).length} de 9`)
+        + fila(`Mañas: ${G.total} ganadas`, `${manasGastadas(p)} aprendidas`);
+    }
+    const e = this.abrir('prog', `<h2>Progreso <small>${esc(p.nombre)} · ${titulo(p)} · nivel ${p.lv}</small></h2>${tabs}${h}`, 'ancho');
+    e.onclick = ev => { const b = ev.target.closest('button'); if (!b || b.disabled) return;
+      if (b.dataset.tab) { audio.play('move'); return this.progreso(b.dataset.tab); }
+      if (b.dataset.m) { if (manasLibres(p) <= 0) return; (p.manas ||= {})[b.dataset.m] = (p.manas[b.dataset.m] || 0) + 1; audio.play('evo'); j.yo.hp = Math.min(j.yo.hp, j.stats().vida); this.guardar(); return this.progreso('manas'); }
+      if (b.dataset.olvidar) { if (p.oro < olvido) { this.toast('No te alcanza la plata.', 'plata', 2); return; } p.oro -= olvido; p.manas = {}; audio.play('back'); j.yo.hp = Math.min(j.yo.hp, j.stats().vida); this.guardar(); return this.progreso('manas'); }
+      if (b.dataset.mo) { const k = b.dataset.mo, iba = j.yo.montado === true; if (iba) j.yo.montado = false; j.vida.mio = null; p.montura = k; if (iba) j.vida.montar(); audio.play('ok'); this.armarHud(); this.guardar(); return this.progreso('mont'); } };
   }
   listaMis() {
     const act = this.misiones.activas(), hechas = Object.values(MIS).filter(m => this.perfil.mis[m.id]?.e === 'hecha');
@@ -230,7 +263,7 @@ export class UI {
     const e = this.abrir('op', `<h2>Opciones</h2><label class="rng">Música <input type="range" min="0" max="1" step=".05" value="${c.mus}" data-k="mus"></label><label class="rng">Sonidos <input type="range" min="0" max="1" step=".05" value="${c.sfx}" data-k="sfx"></label>
       <label class="rng">Cámara <select data-k="vista">${[['arriba', 'Desde arriba'], ['atras', 'Desde atrás'], ['fp', 'Primera persona']].map(([v, n]) => `<option value="${v}" ${(this.juego.vista || c.vista) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       <label class="rng">Gráficos <select data-k="q">${['baja', 'media', 'alta'].map(q => `<option value="${q}" ${c.q === q ? 'selected' : ''}>${q[0].toUpperCase() + q.slice(1)}</option>`).join('')}</select></label>
-      <h3>Controles</h3><p class="tip">Compu: WASD para moverte, el mouse apunta, clic ataca, Q E R habilidades, Espacio esquiva, H toma mate, F habla, G llama o baja del caballo, V cambia la cámara, M mapa, I inventario, L misiones, Enter chat. En primera persona y desde atrás, hacé clic para mirar con el mouse (Esc lo suelta).<br>Celular: joystick a la izquierda y botones a la derecha; con la cámara de atrás o en primera persona, arrastrá el dedo en la mitad derecha para mirar. Joystick de consola: A ataca, X / RB / RT habilidades, B esquiva, Y habla, palanca derecha mira, apretar la izquierda llama al caballo y la derecha cambia la cámara.</p>
+      <h3>Controles</h3><p class="tip">Compu: WASD para moverte, el mouse apunta, clic ataca, Q E R habilidades, Espacio esquiva, H toma mate, F habla, G llama o baja de la montura (Espacio usa su habilidad), V cambia la cámara, P progreso (mañas, monturas y logros), M mapa, I inventario, L misiones, Enter chat. En primera persona y desde atrás, hacé clic para mirar con el mouse (Esc lo suelta).<br>Celular: joystick a la izquierda y botones a la derecha; con la cámara de atrás o en primera persona, arrastrá el dedo en la mitad derecha para mirar. Joystick de consola: A ataca, X / RB / RT habilidades, B esquiva, Y habla, palanca derecha mira, apretar la izquierda llama al caballo y la derecha cambia la cámara.</p>
       ${en ? '<button class="btn sec" data-a="salir">Guardar y salir al inicio</button>' : ''}`);
     e.oninput = ev => { const k = ev.target.dataset.k; if (!k) return; if (k === 'vista') { c.vista = ev.target.value; if (this.juego.activo) this.juego.cambiarVista(c.vista); this.guardar(); return; } c[k] = k === 'q' ? ev.target.value : +ev.target.value; audio.vol.m = c.mus; audio.vol.s = c.sfx; this.guardar(); if (k === 'q') this.toast('Se aplica la próxima vez que abras el juego.', null, 3); };
     e.onclick = ev => { if (ev.target.dataset?.a === 'salir') this.salir(); };
@@ -244,10 +277,11 @@ export class UI {
     x.putImageData(im, 0, 0); this.mapaC = c; this.mapaO = {x: this.mundo.u.uO.value.x, z: this.mundo.u.uO.value.y, k: RES};
   }
   mapa() {
-    const e = this.abrir('mapa', `<h2>Mapa</h2><canvas id="mapac"></canvas><p class="tip">★ tu misión · ☠ jefes · ⌂ pueblos (los que conocés, en blanco)</p>`, 'ancho');
+    const e = this.abrir('mapa', `<h2>Mapa</h2><canvas id="mapac"></canvas><p class="tip">★ tu misión · ☠ jefes · ⌂ pueblos (los que conocés, en blanco) · lo oscuro todavía no lo recorriste (${this.juego.vistoB ? Math.floor(explorado(this.juego.vistoB)) : 0}% explorado)</p>`, 'ancho');
     const cv = e.querySelector('#mapac'), j = this.juego, p = this.perfil, O = this.mapaO; const W = Math.min(innerWidth - 60, 900), H = Math.min(innerHeight - 190, W * 1.25); const k = Math.min(W / this.mapaC.width, H / this.mapaC.height);
     cv.width = this.mapaC.width * k * devicePixelRatio; cv.height = this.mapaC.height * k * devicePixelRatio; cv.style.width = this.mapaC.width * k + 'px'; cv.style.height = this.mapaC.height * k + 'px';
     const x = cv.getContext('2d'), S = k * devicePixelRatio / O.k, P = (wx, wz) => [(wx - O.x) * S, (wz - O.z) * S]; x.imageSmoothingEnabled = true; x.drawImage(this.mapaC, 0, 0, cv.width, cv.height);
+    const vb = j.vistoB; if (vb) { const E = EXPLORA; x.fillStyle = 'rgba(14,8,22,.74)'; for (let jj = 0; jj < E.FILAS; jj++) for (let ii = 0; ii < E.COLS; ii++) { if (visto(vb, jj * E.COLS + ii)) continue; const [a, b] = P(E.X0 + ii * E.CX, E.Z0 + jj * E.CX), [c, d] = P(E.X0 + (ii + 1) * E.CX, E.Z0 + (jj + 1) * E.CX); x.fillRect(Math.round(a), Math.round(b), Math.round(c) - Math.round(a), Math.round(d) - Math.round(b)); } }
     x.font = `${13 * devicePixelRatio}px "Alegreya Sans",sans-serif`; x.textAlign = 'center';
     for (const r of ORDEN) { const [a, b] = P(...REG[r].c); x.fillStyle = 'rgba(20,10,20,.55)'; x.fillText(REG[r].n, a + 1, b + 1 - 14 * devicePixelRatio); x.fillStyle = '#f3e6c8'; x.fillText(REG[r].n, a, b - 14 * devicePixelRatio); }
     for (const g of GUARIDAS) { const [a, b] = P(g.x, g.z); x.fillStyle = p.reliq[g.reg] || (g.reg === 'salamanca' && p.fin) ? '#7d7' : '#ff5a4a'; x.fillText('☠', a, b + 5); }
@@ -256,7 +290,8 @@ export class UI {
     for (const o of j.lista || []) { if (o[0] === this.red.yo) continue; const [a, b] = P(o[4], o[5]); x.fillStyle = '#8ec5e8'; x.beginPath(); x.arc(a, b, 4 * devicePixelRatio, 0, 7); x.fill(); }
     const [a, b] = P(j.yo.x, j.yo.z); x.fillStyle = '#e8453c'; x.strokeStyle = '#fff'; x.lineWidth = 2 * devicePixelRatio; x.beginPath(); x.arc(a, b, 6 * devicePixelRatio, 0, 7); x.fill(); x.stroke();
   }
-  doma(on, eq = 0, k = 0) { const d = $('#doma'); d.hidden = !on; if (!on) return; d.querySelector('.eq i').style.left = (50 + clamp(eq, -1, 1) * 48) + '%'; d.querySelector('.tiempo i').style.width = k * 100 + '%'; }
+  pesca(txt, st) { const d = $('#pesca'); d.hidden = !txt; if (!txt) return; d.querySelector('small').textContent = txt; d.classList.toggle('tira', !!st); if (st) { const z = d.querySelector('.zona'); z.style.left = (st.zona - st.half) * 100 + '%'; z.style.width = st.half * 200 + '%'; d.querySelector('.pez').style.left = st.pos * 100 + '%'; d.querySelector('.tiempo i').style.width = clamp(st.prog, 0, 1) * 100 + '%'; } }
+  doma(on, eq = 0, k = 0, mk) { const d = $('#doma'); d.hidden = !on; if (!on) return; d.querySelector('b').textContent = {toro: '¡Aguantá al toro!', vicuna: '¡Aguantá a la vicuña!'}[mk] || '¡Aguantá al bagual!'; d.querySelector('.eq i').style.left = (50 + clamp(eq, -1, 1) * 48) + '%'; d.querySelector('.tiempo i').style.width = k * 100 + '%'; }
   // ---------- capa 2D: barras, nombres y números ----------
   dibujarOv(dt, camera) {
     const W = innerWidth, H = innerHeight, dpr = Math.min(2, devicePixelRatio || 1), cv = this.ov; if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }

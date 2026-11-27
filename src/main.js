@@ -41,8 +41,8 @@ function boot() {
     fx.begin();
     if (juego.activo) {
       if (!ui.panel && !ctl.escribe) {
-        if (c.mapa) ui.mapa(); else if (c.inv) ui.inventario(); else if (c.mis) ui.listaMis(); else if (c.chat) ui.abrirChat(); else if (c.esc) ui.opciones();
-      } else if (ui.panel && (c.esc || c.mapa && ui.panel.id === 'mapa' || c.inv && ui.panel.id === 'inv' || c.mis && ui.panel.id === 'mis')) { ui.cerrarPanel(); c.esc = false; }
+        if (c.mapa) ui.mapa(); else if (c.prog) ui.progreso(); else if (c.inv) ui.inventario(); else if (c.mis) ui.listaMis(); else if (c.chat) ui.abrirChat(); else if (c.esc) ui.opciones();
+      } else if (ui.panel && (c.esc || c.mapa && ui.panel.id === 'mapa' || c.prog && ui.panel.id === 'prog' || c.inv && ui.panel.id === 'inv' || c.mis && ui.panel.id === 'mis')) { ui.cerrarPanel(); c.esc = false; }
       ui.pausa = !!ui.panel && ui.panel.id !== 'mapa';
       // un instante de pausa en los golpes fuertes y cámara lenta cuando cae un jefe
       let dj = dt; if (juego.parar > 0) { juego.parar -= dt; dj = dt * (juego.parar > .2 ? .2 : .06); }

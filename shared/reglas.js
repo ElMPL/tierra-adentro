@@ -110,6 +110,7 @@ export const OBJETOS = {
   mate: {n: 'Mate', d: 'Cura el 35% de la vida.', ic: 'mate', precio: 15, usa: 1},
   asado: {n: 'Asado', d: 'Cura toda la vida en 6 segundos.', ic: 'asado', precio: 45, usa: 1},
   cana: {n: 'Caña con ruda', d: '+25% de daño por un minuto.', ic: 'botella', precio: 60, usa: 1},
+  pescado: {n: 'Pescado asado', d: 'Cura el 50% de la vida. Sale de pescar.', ic: 'asado', precio: 0, usa: 1},
   retazo: {n: 'Retazo de leyenda', d: 'Lo que dejan los bichos. El herrero lo usa para mejorar el arma.', ic: 'cincha', mat: 1},
 };
 export const AMULETOS = {

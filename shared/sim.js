@@ -39,7 +39,7 @@ export class Mundo {
         if (!m.re) this.todos({t: 'entra', id, n: p.n, ch: p.ch, lv: p.lv}, id); break; // re: vuelve a presentarse (cambió el anfitrión o se cortó)
       }
       case 'p': p.x = num(m.x, -500, 500, p.x); p.z = num(m.z, -620, 620, p.z); p.ry = num(m.ry, -10, 10); p.mv = num(m.mv, 0, 1); p.at = num(m.at, 0, 1);
-        p.hp = num(m.hp, 0, 1, p.hp); p.lv = num(m.lv, 1, 30, p.lv) | 0; p.d = m.d ? 1 : 0; p.es = m.es ? 1 : 0; p.fu = m.fu ? 1 : 0; p.ca = m.ca ? 1 : 0;
+        p.hp = num(m.hp, 0, 1, p.hp); p.lv = num(m.lv, 1, 30, p.lv) | 0; p.d = m.d ? 1 : 0; p.es = m.es ? 1 : 0; p.fu = m.fu ? 1 : 0; p.ca = num(m.ca, 0, 15) | 0;
         if (p.vivo && p.hp <= 0) { p.vivo = false; for (const b of this.bs.values()) if (b.obj === id) b.obj = null; }
         if (!p.vivo && p.hp > 0) p.vivo = true; break;
       case 'g': if (Array.isArray(m.h)) for (const h of m.h.slice(0, 60)) if (Array.isArray(h)) this.golpe(p, h); break;
