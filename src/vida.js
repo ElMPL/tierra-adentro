@@ -11,6 +11,8 @@ const FAUNA = {pampa: [['vaca', 3], ['caballo', 2.4], ['oveja', 2]], ibera: [['v
 const MOD = {vaca: 'm_vaca', caballo: 'm_caballo', oveja: 'm_oveja', vicuna: 'm_vicuna', perro: 'o_perro'};
 const VEL = {vaca: 5, caballo: 10, oveja: 5.5, vicuna: 9, perro: 7.5};
 const MIEDO = {vaca: 4.5, caballo: 6.5, oveja: 5.5, vicuna: 9, perro: 0};
+// a pie y despacito se dejan arrimar bastante más: así se pueden domar
+const MIEDO_PIE = {vaca: 2, caballo: 2.2, oveja: 2.6, vicuna: 2.4, perro: 0};
 const NOMBRES = {caballo: ['Malacara', 'Tostado', 'Overo', 'Zaino', 'Moro', 'Picazo', 'Tobiano', 'Gateado', 'Lobuno', 'Bayo', 'Alazán', 'Rosillo'], toro: ['Barcino', 'Hosco', 'Overo Negro', 'Colorado', 'Bragado'], vicuna: ['Wari', 'Kusi', 'Tika', 'Puna', 'Sumaj']};
 // las monturas: tres se doman en el campo y cinco te las ganás venciendo a los jefes
 // vel: cuánto más rápido que a pie · alto: dónde va sentado el jinete · hab: qué hace con Espacio
@@ -90,11 +92,14 @@ export class Vida {
       if (d > 115) { this.anim.splice(i, 1); continue; }
       if (this.doma?.a === a) continue;
       // se asustan si llegás corriendo, si peleás cerca o si hay bichos
-      let susto = MIEDO[a.k] && (d < MIEDO[a.k] * (rapido ? 1.6 : 1) || (y.atk > .5 && d < 9)); let ox = y.x, oz = y.z;
+      let susto = MIEDO[a.k] && (d < (rapido ? MIEDO[a.k] * 1.6 : y.montado ? MIEDO[a.k] : MIEDO_PIE[a.k]) || (y.atk > .5 && d < 9)); let ox = y.x, oz = y.z;
+      // si te arrimás a pie, se quedan quietos mirándote
+      const alerta = !susto && a.st !== 'huye' && MIEDO[a.k] && d < MIEDO[a.k] * 1.3 && !y.montado;
       if (!susto && MIEDO[a.k]) for (const b of J.bichos.values()) if (!b.muere && Math.abs(b.x - a.x) < 7 && Math.abs(b.z - a.z) < 7) { susto = true; ox = b.x; oz = b.z; break; }
       if (susto && a.st !== 'huye') { a.st = 'huye'; a.t = rnd(2.2, 3.4); const l = Math.hypot(a.x - ox, a.z - oz) || 1; a.fx = (a.x - ox) / l; a.fz = (a.z - oz) / l; if (a.k === 'vaca' && J.t > this.mooT) { this.mooT = J.t + 4; audio.play('moo'); } if (a.k === 'perro' && J.t > this.mooT) { this.mooT = J.t + 2; audio.play('bark'); } }
       a.t -= dt; let sp = 0;
       if (a.st === 'huye') { sp = VEL[a.k]; a.ry = lerpA(a.ry, Math.atan2(a.fx, a.fz), dt * 6); if (a.t <= 0) { a.st = 'pasta'; a.t = rnd(2, 5); a.hx = a.x; a.hz = a.z; } }
+      else if (alerta) { a.ry = lerpA(a.ry, Math.atan2(-dx, -dz), dt * 3); if (a.st === 'camina') { a.st = 'pasta'; a.t = rnd(2, 4); } }
       else if (a.st === 'camina') { const ex = a.tx - a.x, ez = a.tz - a.z, l = Math.hypot(ex, ez); sp = 1.1; a.ry = lerpA(a.ry, Math.atan2(ex, ez), dt * 3); if (l < .5 || a.t <= 0) { a.st = 'pasta'; a.t = rnd(3, 8); } }
       else if (a.t <= 0) { a.st = 'camina'; a.t = 7; const b = Math.random() * TAU, r = rnd(1, 7); a.tx = a.hx + Math.sin(b) * r; a.tz = a.hz + Math.cos(b) * r; }
       if (a.k === 'perro' && a.st !== 'huye' && d < 14 && d > 2.5) { sp = Math.min(6, d); a.ry = lerpA(a.ry, Math.atan2(-dx, -dz), dt * 5); if (J.t > this.mooT && Math.random() < dt * .3) { this.mooT = J.t + 3; audio.play('bark'); } }
@@ -212,7 +217,7 @@ export class Vida {
   // cosas con las que se puede hacer algo (F)
   candidatos(cand) {
     const y = this.y, J = this.j;
-    if (!y.montado) for (const a of this.anim) { const mk = DOMABLE[a.k]; if (mk && !this.p.monturas[mk] && a.st !== 'huye' && Math.abs(a.x - y.x) < 5 && Math.abs(a.z - y.z) < 5) cand('bagual', a, Math.hypot(a.x - y.x, a.z - y.z) - .8); }
+    if (!y.montado) for (const a of this.anim) { const mk = DOMABLE[a.k]; if (mk && !this.p.monturas[mk] && a.st !== 'huye' && Math.abs(a.x - y.x) < 5 && Math.abs(a.z - y.z) < 5) cand('bagual', a, Math.hypot(a.x - y.x, a.z - y.z) - 2.4); }
     if (this.mio && !y.montado) cand('caballo', this.mio, Math.hypot(this.mio.x - y.x, this.mio.z - y.z) - .8);
     for (const g of this.gente) if (!g.dentro && Math.abs(g.x - y.x) < 4 && Math.abs(g.z - y.z) < 4) cand('gente', g, Math.hypot(g.x - y.x, g.z - y.z));
     for (const g of this.perros) if (Math.abs(g.x - y.x) < 3 && Math.abs(g.z - y.z) < 3) cand('perro', g, Math.hypot(g.x - y.x, g.z - y.z) - .2);
