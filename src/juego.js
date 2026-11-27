@@ -7,6 +7,10 @@ import {audio} from '../lib/audio.js';
 import {KITS, DESBLOQUEO, ESQUIVE, danoBase, vidaMax, armadura, xpSig, NIVEL_MAX, AMULETOS, OBJETOS, ENEMIES, BOSSES, RELIQ, CHARS} from '../shared/reglas.js';
 import {chocar, agua, velAgua, enPueblo, regionEn, nivelEn, NPCS, LUGARES, PUEBLOS, REG, SALA, RELIQUIAS, dentro} from '../shared/mapa.js';
 import {esNoche, DIA} from '../shared/sim.js';
+import {Vida} from './vida.js';
+import {Eventos} from './eventos.js';
+import {FIJOS} from '../shared/mapa.js';
+import {ctl} from './controles.js';
 
 const now = () => performance.now() / 1000;
 const ang = (a, b) => { let d = a - b; while (d > Math.PI) d -= TAU; while (d < -Math.PI) d += TAU; return d; };
@@ -22,6 +26,8 @@ export class Juego {
     this.B = {}; this.otros = new Map(); this.bichos = new Map(); this.atks = []; this.balasE = []; this.balasP = []; this.zonas = []; this.nums = []; this.orb = [];
     this.golpes = []; this.t = 0; this.envT = 0; this.cam = {x: 0, z: 0, d: 26, sh: 0}; this.activo = false; this.snap = 0; this.ray = new THREE.Raycaster(); this.plano = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.npcs = NPCS.map(n => ({...n})); this.region = null; this.pueblo = null; this.jefeB = null; this.cerca = null; this.lugCd = {};
+    this.vista = 'arriba'; this.cam.yaw = Math.PI; this.cam.pitch = -.12; this.parar = 0; this.vida = new Vida(this); this.eventos = new Eventos(this);
+    this.aljibes = FIJOS.filter(o => o.t === 'aljibe' || o.t === 'pozo');
   }
   // ---------- batches ----------
   bt(k, max = 64) {
@@ -36,7 +42,8 @@ export class Juego {
     const pos = perfil.pos && dentro(perfil.pos.x, perfil.pos.z, 2) ? perfil.pos : {x: REG.pampa.pueblo.x + 3, z: REG.pampa.pueblo.z + 6};
     this.yo = {x: pos.x, z: pos.z, ry: Math.PI, ph: 0, mv: 0, atk: 0, fl: 0, hp: 1, cd: [0, 0, 0], cdB: 0, esq: 0, esqT: 0, dash: null, buff: {}, ultDano: -99, vivo: true, cura: null};
     this.yo.hp = this.stats().vida * (perfil.hpPct ?? 1); if (this.yo.hp <= 0) this.yo.hp = this.stats().vida;
-    this.cam.x = this.yo.x; this.cam.z = this.yo.z; this.activo = true; this.region = null;
+    this.cam.x = this.yo.x; this.cam.z = this.yo.z; this.activo = true; this.region = null; this.cam.yaw = Math.PI; this.yo.montado = false;
+    this.vista = this.cfg.vista || 'arriba'; ctl.vista = this.vista; this.eventos.limpiar(); this.vida.empezar();
     for (const n of this.npcs) { if (n.rol === 'pulpero') n.mod = 'm_pulpero'; else if (n.rol === 'herrero') n.mod = 'h_asador'; else if (n.rol === 'posta') n.mod = 'm_mercachifle'; else { const i = {vecino: 0, baqueano: 1, cantor: 2}[n.rol]; let ch = GENTE[n.reg][i]; if (ch === perfil.ch) ch = REEMPLAZO.find(c => c !== perfil.ch); n.ch = ch; n.mod = 'h_' + ch; } }
     for (const n of this.npcs) if (n.rol === 'herrero' && perfil.ch === 'asador') n.mod = 'h_gaucho';
     this.mundo.decorar(this.yo.x, this.yo.z, true);
@@ -46,7 +53,7 @@ export class Juego {
     const s = {vida: vidaMax(K.vida, p.lv, p.poncho), vel: K.vel, dmg: danoBase(p.lv, p.arma), crit: .05 + (K.crit || 0), arm: armadura(p.poncho) + (K.arm || 0), suerte: K.suerte || 0, regen: .5 + p.lv * .05, cdr: 1, robo: K.robo || 0, oro: 0, revive: 0};
     if (p.amuleto && AMULETOS[p.amuleto]) AMULETOS[p.amuleto].f(s);
     if (b.furia > t) { s.dmg *= b.furiaK || 1.6; s.vel *= 1.3; s.robo += .2; }
-    if (b.cana > t) s.dmg *= 1.25; if (b.santo > t) s.dmg *= 1.1; if (b.apacheta > t) s.suerte += .3; if (b.difunta > t) s.regen += 3; if (b.velK > t) s.vel *= 1.25;
+    if (b.cana > t) s.dmg *= 1.25; if (b.santo > t) s.dmg *= 1.1; if (b.apacheta > t) s.suerte += .3; if (b.difunta > t) s.regen += 3; if (b.velK > t) s.vel *= 1.25; if (this.yo?.montado === true) s.vel *= 1.75;
     s.arm = Math.min(.6, s.arm); return s;
   }
   // ---------- mensajes del mundo ----------
@@ -56,24 +63,29 @@ export class Juego {
       case 's': {
         const id = ++this.snap;
         for (const a of m.b) {
-          let b = this.bichos.get(a[0]);
-          if (!b) { const d = ENEMIES[a[1]] || BOSSES[a[1]] || {}; b = {id: a[0], tipo: a[1], buf: [], x: a[2], z: a[3], ry: a[4], ph: Math.random() * 9, mv: 0, at: 0, fl: 0, die: 0, s: (d.s || 1) * ((a[8] & 1) ? 1.4 : (a[8] & 2) ? 1.15 : 1), r: (d.r || .5) * ((a[8] & 1) ? 1.35 : (a[8] & 2) ? 1.15 : 1), fly: !!d.fly, mostrar: 0}; this.bichos.set(a[0], b); }
-          if (b.buf.length && b.buf[b.buf.length - 1][0] === t) b.buf.pop(); b.buf.push([t, a[2], a[3], a[4]]); if (b.buf.length > 6) b.buf.shift();
-          b.hp = a[5]; b.sk = a[6]; b.lv = a[7]; b.fl8 = a[8]; b.camp = !!(a[8] & 1); b.jefe = !!(a[8] & 2); b.est = a[8] & 24; b.n = a[9] || null; b.seen = id;
+          // [id, x, z, giro, vida, ataque, marcas, tipo?, nivel?, nombre?]: el tipo viene solo cuando aparece
+          let b = this.bichos.get(a[0]); const f = a[6];
+          if (!b) { if (!a[7]) continue; const d = ENEMIES[a[7]] || BOSSES[a[7]] || {}; b = {id: a[0], tipo: a[7], buf: [], x: a[1], z: a[2], ry: a[3], ph: Math.random() * 9, mv: 0, at: 0, fl: 0, die: 0, s: (d.s || 1) * ((f & 1) ? 1.4 : (f & 2) ? 1.15 : 1), r: (d.r || .5) * ((f & 1) ? 1.35 : (f & 2) ? 1.15 : 1), fly: !!d.fly, mostrar: 0}; this.bichos.set(a[0], b); }
+          if (a[7]) { b.lv = a[8]; b.n = a[9] || null; }
+          if (b.buf.length && b.buf[b.buf.length - 1][0] === t) b.buf.pop(); b.buf.push([t, a[1], a[2], a[3]]); if (b.buf.length > 6) b.buf.shift();
+          b.hp = a[4]; b.sk = a[5]; b.fl8 = f; b.camp = !!(f & 1); b.jefe = !!(f & 2); b.est = f & 24; b.ladron = !!(f & 32); b.malon = !!(f & 64); b.seen = id;
         }
         for (const [k, b] of this.bichos) if (b.seen !== id && !b.muere) this.bichos.delete(k);
         const vis = new Set();
         for (const a of m.j) {
           vis.add(a[0]); let o = this.otros.get(a[0]);
           if (!o) { o = {id: a[0], buf: [], x: a[1], z: a[2], ry: a[3], ph: 0, mv: 0, at: 0}; this.otros.set(a[0], o); }
-          if (o.buf.length && o.buf[o.buf.length - 1][0] === t) o.buf.pop(); o.buf.push([t, a[1], a[2], a[3]]); if (o.buf.length > 6) o.buf.shift(); o.mvS = a[4]; o.atS = a[5]; o.hp = a[6]; o.ch = CHARS[a[7]] ? a[7] : 'gaucho'; o.lv = a[8]; o.n = a[9]; o.d = a[10] & 1; o.es = a[10] & 2; o.fu = a[10] & 4;
+          if (o.buf.length && o.buf[o.buf.length - 1][0] === t) o.buf.pop(); o.buf.push([t, a[1], a[2], a[3]]); if (o.buf.length > 6) o.buf.shift(); o.mvS = a[4]; o.atS = a[5]; o.hp = a[6]; o.ch = CHARS[a[7]] ? a[7] : 'gaucho'; o.lv = a[8]; o.n = a[9]; o.d = a[10] & 1; o.es = a[10] & 2; o.fu = a[10] & 4; o.ca = a[10] & 8;
         }
         for (const k of this.otros.keys()) if (!vis.has(k)) this.otros.delete(k);
+        this.eventos.snap(m.e || []);
         break;
       }
       case 'atk': this.atks.push({...m, t0: t}); break;
       case 'bala': this.balasE.push({...m, t0: t + (m.dt || 0), col: COLB(m.k || 'x')}); break;
-      case 'muere': { const b = this.bichos.get(m.b); if (b) { b.muere = t; b.x = m.x; b.z = m.z; b.buf.length = 0; } this.parts.burst(m.x, .9, m.z, b && (b.jefe) ? 90 : 12, b?.jefe ? [1, .5, .2] : [1, .55, .25], {sp: b?.jefe ? 12 : 5, size: b?.jefe ? .6 : .32, life: b?.jefe ? 1.6 : .6, up: 1}); if (b?.jefe) { this.cam.sh = .8; audio.play('boom'); } break; }
+      case 'ev': case 'regalo': this.eventos.mensaje(m); break;
+      case 'robo': { const v = Math.min(this.p.oro, m.robo | 0); this.p.oro -= v; this.num(m.x, m.z, '-' + v + ' $', '#ff6a5a', 1); this.ui.toast(`¡Un duende salió de la tinaja y se llevó ${v} patacones! Agarralo antes de que se escape.`, 'f_duende', 4); audio.play('wail'); this.ui.guardar(); break; }
+      case 'muere': { const b = this.bichos.get(m.b); if (b) { b.muere = t; b.x = m.x; b.z = m.z; b.buf.length = 0; } if (m.fue) { this.parts.burst(m.x, .6, m.z, 10, [.7, .65, .6], {type: 2, sp: 3, size: .9, life: .6, grow: 1}); break; } if (b && b.mostrar > this.t) this.parar = Math.max(this.parar, b.jefe ? .5 : .05); this.parts.burst(m.x, .9, m.z, b && (b.jefe) ? 90 : 12, b?.jefe ? [1, .5, .2] : [1, .55, .25], {sp: b?.jefe ? 12 : 5, size: b?.jefe ? .6 : .32, life: b?.jefe ? 1.6 : .6, up: 1}); if (b?.jefe) { this.cam.sh = .8; audio.play('boom'); } break; }
       case 'premio': this.premio(m); break;
       case 'jefe': this.jefeB = m.b; this.ui.jefe(m); audio.track('boss'); audio.play('roar'); this.cam.sh = .5; break;
       case 'jefefin': if (this.jefeB === m.b) { this.jefeB = null; this.ui.jefe(null); this.region = null; } break;
@@ -126,7 +138,7 @@ export class Juego {
   cae() {
     const y = this.yo, s = this.stats();
     if (s.revive && (this.p.estampita || 0) < Date.now() - 300e3) { this.p.estampita = Date.now(); y.hp = s.vida * .5; y.inv = this.t + 2; this.ui.toast('¡El Gauchito te levantó!', 'estampita', 4); audio.play('heal'); return; }
-    y.hp = 0; y.vivo = false; audio.play('lose'); this.ui.caido(true); this.enviar(true);
+    if (y.montado) this.vida.silbar(); y.hp = 0; y.vivo = false; audio.play('lose'); this.ui.caido(true); this.enviar(true);
   }
   revivir(enFogon = true) {
     const y = this.yo, p = this.p; if (enFogon) { const pu = REG[p.fogon || 'pampa'].pueblo; y.x = pu.x + 2; y.z = pu.z + 5; p.oro = Math.floor(p.oro * .9); }
@@ -135,7 +147,9 @@ export class Juego {
   // ---------- tu turno: moverte y pelear ----------
   update(dt, c) {
     this.t += dt; const t = this.t, y = this.yo, s = this.stats();
-    if (y.vivo && !this.ui.pausa) this.manejar(dt, c, s);
+    this.mirar(dt, c); if (c.cam) this.cambiarVista(); if (c.caballo && !this.ui.pausa) this.vida.silbar();
+    this.vida.update(dt, c); this.eventos.update(dt);
+    if (y.vivo && !this.ui.pausa && !this.vida.doma && !this.eventos.abd) this.manejar(dt, c, s);
     // vida
     if (y.vivo) { const fuera = t - y.ultDano > 6; y.hp = Math.min(s.vida, y.hp + (fuera ? s.vida * .03 + s.regen : s.regen) * dt); if (y.cura) { const k = Math.min(dt, y.cura.t); y.hp = Math.min(s.vida, y.hp + y.cura.v * k); y.cura.t -= dt; if (y.cura.t <= 0) y.cura = null; } }
     y.fl = Math.max(0, y.fl - dt * 4); y.atk = Math.max(0, y.atk - dt * 4); this.herido = Math.max(0, (this.herido || 0) - dt * 2);
@@ -147,9 +161,15 @@ export class Juego {
     this.camara(dt);
     if ((this.guT = (this.guT || 0) + dt) > 10) { this.guT = 0; this.ui.guardar(); }
   }
-  enviar(forzar) { const y = this.yo; this.red.manda({t: 'p', x: Math.round(y.x * 10) / 10, z: Math.round(y.z * 10) / 10, ry: Math.round(y.ry * 100) / 100, mv: Math.round(y.mv * 10) / 10, at: Math.round(y.atk * 10) / 10, hp: Math.round(y.hp / this.stats().vida * 100) / 100, lv: this.p.lv, d: y.dash ? 1 : 0, es: y.buff.escudo > this.t ? 1 : 0, fu: y.buff.furia > this.t ? 1 : 0}); }
+  enviar(forzar) { const y = this.yo; this.red.manda({t: 'p', x: Math.round(y.x * 10) / 10, z: Math.round(y.z * 10) / 10, ry: Math.round(y.ry * 100) / 100, mv: Math.round(y.mv * 10) / 10, at: Math.round(y.atk * 10) / 10, hp: Math.round(y.hp / this.stats().vida * 100) / 100, lv: this.p.lv, d: y.dash ? 1 : 0, es: y.buff.escudo > this.t ? 1 : 0, fu: y.buff.furia > this.t ? 1 : 0, ca: y.montado === true ? 1 : 0}); }
   apunta(c) {
     const y = this.yo;
+    if (this.vista !== 'arriba') { // apuntás con la vista: al bicho que tengas más adelante o al piso donde mirás
+      const yaw = this.cam.yaw, fx = Math.sin(yaw), fz = Math.cos(yaw); let best = null, bs = 1e9;
+      for (const b of this.bichos.values()) { if (b.muere) continue; const dx = b.x - y.x, dz = b.z - y.z, d = Math.hypot(dx, dz); if (d > 20 || d < .1) continue; const a = Math.abs(ang(Math.atan2(dx, dz), yaw)); if (a > .42) continue; const sc = a * 14 + d; if (sc < bs) { bs = sc; best = b; } }
+      if (best) return {x: best.x, z: best.z, b: best};
+      const L = clamp(this.vista === 'fp' ? 2.2 / Math.max(.12, -Math.sin(this.cam.pitch - .05)) : 9, 4, 14); return {x: y.x + fx * L, z: y.z + fz * L};
+    }
     if (c.mouse) { const v = new THREE.Vector2(c.mouse.x / innerWidth * 2 - 1, -(c.mouse.y / innerHeight) * 2 + 1); this.ray.setFromCamera(v, this.camera); const p = new THREE.Vector3(); if (this.ray.ray.intersectPlane(this.plano, p)) return {x: p.x, z: p.z, raton: 1}; }
     // sin mouse: al bicho más cercano adelante tuyo, si no hacia donde mirás
     let best = null, bd = 13; const fx = Math.sin(y.ry), fz = Math.cos(y.ry);
@@ -161,6 +181,7 @@ export class Juego {
     const y = this.yo, t = this.t, K = KITS[this.p.ch];
     for (let i = 0; i < 3; i++) y.cd[i] = Math.max(0, y.cd[i] - dt); y.cdB = Math.max(0, y.cdB - dt); y.esq = Math.max(0, y.esq - dt);
     // esquive y cargas
+    if (this.vista !== 'arriba') { const yaw = this.cam.yaw, fx = Math.sin(yaw), fz = Math.cos(yaw), mx = c.mx, mz = c.mz; c = {...c, mx: -fz * mx - fx * mz, mz: fx * mx - fz * mz}; }
     if (y.dash) {
       const d = y.dash; d.t += dt; const k = Math.min(dt, Math.max(0, d.dur - (d.t - dt))) / d.dur; const ox = y.x, oz = y.z; y.x += d.dx * d.dist * k; y.z += d.dz * d.dist * k;
       if (!chocar(y, .55, true)) { y.x = ox; y.z = oz; } this.puerta(y, ox, oz);
@@ -174,11 +195,11 @@ export class Juego {
       // los bichos no se atraviesan
       for (const b of this.bichos.values()) { if (b.muere || b.fly) continue; const dx = y.x - b.x, dz = y.z - b.z, R = b.r + .5, d2 = dx * dx + dz * dz; if (d2 < R * R && d2 > 1e-4) { const d = Math.sqrt(d2); y.x = b.x + dx / d * R; y.z = b.z + dz / d * R; } }
       if (!chocar(y, .55)) { y.x = ox; y.z = oz; } this.puerta(y, ox, oz);
-      if (!c.atk || c.mouse == null) y.ry = lerpA(y.ry, Math.atan2(c.mx, c.mz), Math.min(1, dt * 14));
-      y.ph += dt * 11 * sp / 6.2; if (aq > .1 && t % .25 < dt) this.parts.burst(y.x, .1, y.z, 3, [.7, .85, 1], {sp: 2, size: .2, life: .4});
+      if (this.vista === 'fp') y.ry = this.cam.yaw; else if (!c.atk || c.mouse == null) y.ry = lerpA(y.ry, Math.atan2(c.mx, c.mz), Math.min(1, dt * (y.montado ? 8 : 14)));
+      y.ph += dt * (y.montado ? 7 : 11) * sp / 6.2; if (y.montado && t % .12 < dt) this.parts.burst(y.x - Math.sin(y.ry) * 1.2, .2, y.z - Math.cos(y.ry) * 1.2, 2, [.75, .65, .5], {type: 2, sp: 1.5, size: .7, life: .5, grow: 1}); if (aq > .1 && t % .25 < dt) this.parts.burst(y.x, .1, y.z, 3, [.7, .85, 1], {sp: 2, size: .2, life: .4});
     }
     y.mv = lerp(y.mv, m > .1 ? 1 : 0, Math.min(1, dt * 12));
-    if (c.esq && y.esq <= 0) { const a = m > .1 ? Math.atan2(c.mx, c.mz) : y.ry; y.dash = {dx: Math.sin(a), dz: Math.cos(a), dist: ESQUIVE.dist, dur: ESQUIVE.dur, t: 0}; y.esq = ESQUIVE.cd; audio.play('dash'); this.red.manda({t: 'fx', k: 'esq', x: y.x, z: y.z, ry: a}); return; }
+    if (c.esq && y.esq <= 0) { const a = m > .1 ? Math.atan2(c.mx, c.mz) : y.ry, cab = y.montado === true; y.dash = {dx: Math.sin(a), dz: Math.cos(a), dist: cab ? 8.5 : ESQUIVE.dist, dur: cab ? .55 : ESQUIVE.dur, t: 0, vuela: cab ? .45 : 0}; y.esq = cab ? 1.4 : ESQUIVE.cd; audio.play('dash'); this.red.manda({t: 'fx', k: 'esq', x: y.x, z: y.z, ry: a}); return; }
     if (c.mate) this.usar('mate');
     const enPue = !!enPueblo(y.x, y.z);
     // ataque básico (mantener apretado)
@@ -235,14 +256,24 @@ export class Juego {
   golpeLinea(d, ox, oz, s) { for (const b of this.bichos.values()) { if (b.muere || d.hit.has(b.id)) continue; if (Math.hypot(b.x - this.yo.x, b.z - this.yo.z) < b.r + (d.ancho || 2) / 2 + .5) { d.hit.add(b.id); this.pega(b, d.dmg, d.dx * 6, d.dz * 6, 2, .5); } } }
   pega(b, dmg, kx, kz, est = 0, dur = 0) {
     const s = this.stats(), y = this.yo; const dif = Math.max(0, (b.lv || 1) - this.p.lv - 2); let v = dmg * rnd(.9, 1.1) * Math.max(.45, 1 - .07 * dif);
-    const crit = Math.random() < s.crit; if (crit) v *= 1.8; v = Math.max(1, Math.round(v));
+    const crit = Math.random() < s.crit; if (crit) { v *= 1.8; this.parar = Math.max(this.parar, .035); } v = Math.max(1, Math.round(v));
     this.golpes.push([b.id, v, Math.round(kx * 10) / 10, Math.round(kz * 10) / 10, est, dur]);
     b.fl = 1; this.num(b.x, b.z, String(v), crit ? '#ffd23a' : '#fff', crit ? 1.1 : .8, b.r * 2 + 1.4);
     this.parts.burst(b.x, .9, b.z, crit ? 7 : 3, [1, .75, .4], {sp: 4, size: .22, life: .35}); if (crit) audio.play('crit');
     if (s.robo) y.hp = Math.min(s.vida, y.hp + v * s.robo);
     b.mostrar = this.t + 4;
   }
-  romperCerca(x, z, R) { for (const o of this.mundo.vis) { if (this.mundo.rotos.has(o)) continue; if (Math.hypot(o.x - x, o.z - z) < R + .6) { this.mundo.romper(o); this.parts.burst(o.x, .6, o.z, 12, [.7, .45, .25], {sp: 5, size: .35, life: .6, grav: 1}); audio.play('pick'); if (Math.random() < .6) { const v = 2 + Math.floor(Math.random() * this.p.lv * 1.5); this.p.oro += v; this.num(o.x, o.z, '+' + v + ' $', '#f2c14a', .8); } } } }
+  romperCerca(x, z, R) { for (const o of this.mundo.vis) { if (this.mundo.rotos.has(o)) continue; if (Math.hypot(o.x - x, o.z - z) < R + .6) this.romper(o); } }
+  romper(o) {
+    const K = KIT[o.t] || {}, p = this.p; this.mundo.romper(o);
+    if (K.pasto) { this.parts.burst(o.x, .5, o.z, 10, [.55, .75, .35], {sp: 4, size: .3, life: .6, grav: -4, type: 4}); if (Math.random() < .15) { const v = 1 + Math.floor(Math.random() * (2 + p.lv * .5)); p.oro += v; this.num(o.x, o.z, '+' + v + ' $', '#f2c14a', .7); audio.play('coin'); } else audio.play('slash'); return; }
+    this.parts.burst(o.x, .6, o.z, 12, [.7, .45, .25], {sp: 5, size: .35, life: .6, grav: 1}); audio.play('pick');
+    const r = Math.random();
+    if (K.loot && r < .07 && p.oro >= 10 && !this.bichosCerca(14) && Math.hypot(o.x - this.yo.x, o.z - this.yo.z) < 12) { this.enviar(true); this.red.manda({t: 'sorpresa', k: 'duende', x: Math.round(o.x * 10) / 10, z: Math.round(o.z * 10) / 10, robo: Math.min(p.oro, 10 + p.lv * 4)}); return; }
+    if (K.loot && r < .12) { p.inv.mate = (p.inv.mate || 0) + 1; this.num(o.x, o.z, '+1 Mate', '#cde', .9); return; }
+    if (K.loot && r < .125) { const ks = Object.keys(AMULETOS), a = ks[Math.random() * ks.length | 0]; p.amuletos[a] = (p.amuletos[a] || 0) + 1; this.ui.toast(`¡Adentro había ${AMULETOS[a].n}!`, AMULETOS[a].ic, 4); audio.play('gem'); return; }
+    if (Math.random() < .6) { const v = 2 + Math.floor(Math.random() * p.lv * 1.5); p.oro += v; this.num(o.x, o.z, '+' + v + ' $', '#f2c14a', .8); }
+  }
   usar(k) {
     const p = this.p, y = this.yo; if (!(p.inv[k] > 0)) { if (k === 'mate') this.ui.toast('No te quedan mates. Comprá en la pulpería.', 'mate', 2); return; }
     if (k === 'mate') { if (this.t < (y.mateCd || 0)) return; y.mateCd = this.t + 2; this.curar(.35); }
@@ -315,7 +346,7 @@ export class Juego {
         if (!p.expl && p.perf-- <= 0) { fin = true; break; }
       }
       else for (const b of this.bichos.values()) if (!b.muere && Math.hypot(b.x - p.x, b.z - p.z) < b.r + p.r) { fin = true; break; }
-      if (p.me && !fin) for (const o of this.mundo.vis) if (!this.mundo.rotos.has(o) && Math.hypot(o.x - p.x, o.z - p.z) < .9) { this.romperCerca(p.x, p.z, .4); fin = true; break; }
+      if (p.me && !fin) for (const o of this.mundo.vis) if (!this.mundo.rotos.has(o) && Math.hypot(o.x - p.x, o.z - p.z) < .9) { if (KIT[o.t]?.pasto) { this.romper(o); continue; } this.romperCerca(p.x, p.z, .4); fin = true; break; }
       if (fin) { if (p.expl) { this.fx.spawn(FX.RING, p.x, p.z, p.expl, [1, .7, .3], .3); this.parts.burst(p.x, .6, p.z, 10, [1, .7, .3], {sp: 5, size: .35}); } this.balasP.splice(i, 1); }
     }
   }
@@ -343,12 +374,37 @@ export class Juego {
     for (const n of this.npcs) { const d = Math.hypot(n.x - y.x, n.z - y.z); if (d < bd) { bd = d; best = {tipo: 'npc', ref: n}; } }
     for (const p of PUEBLOS) { const d = Math.hypot(p.x - y.x, p.z - y.z) - 1.2; if (d < bd) { bd = d; best = {tipo: 'fogon', ref: p}; } }
     for (const l of LUGARES) { if (Math.abs(l.x - y.x) > 5 || Math.abs(l.z - y.z) > 5) continue; const d = Math.hypot(l.x - y.x, l.z - y.z) - 1; if (d < bd) { bd = d; best = {tipo: l.tipo, ref: l}; } }
+    const cand = (tipo, ref, d) => { if (d < bd) { bd = d; best = {tipo, ref}; } };
+    for (const o of this.aljibes) if (Math.abs(o.x - y.x) < 4 && Math.abs(o.z - y.z) < 4) cand('aljibe', o, Math.hypot(o.x - y.x, o.z - y.z) - 1);
+    if (!this.vida.doma && !this.eventos.abd) { this.vida.candidatos(cand); this.eventos.candidatos(cand); }
     this.cerca = best; this.ui.cerca(best);
     if (best && c.usar && y.vivo) this.ui.usar(best);
   }
   // ---------- cámara ----------
+  // ---------- vista: desde arriba, desde atrás o con tus ojos ----------
+  cambiarVista(v) {
+    const L = ['arriba', 'atras', 'fp']; this.vista = v || L[(L.indexOf(this.vista) + 1) % L.length]; this.cfg.vista = this.vista; ctl.vista = this.vista;
+    if (this.vista === 'arriba' && document.pointerLockElement) document.exitPointerLock?.();
+    if (this.vista !== 'arriba') { this.cam.yaw = this.yo.ry; this.cam.pitch = this.vista === 'fp' ? -.08 : -.2; }
+    this.ui.toast({arriba: 'Cámara desde arriba', atras: 'Cámara desde atrás', fp: 'Primera persona'}[this.vista] + (this.vista !== 'arriba' ? (ctl.tactil ? ' · arrastrá a la derecha para mirar' : ' · hacé clic para mirar con el mouse') : ''), null, 2.5); this.ui.guardar?.();
+  }
+  mirar(dt, c) {
+    if (this.vista === 'arriba') return; const C = this.cam, k = ctl.tactil ? .0042 : .0024;
+    C.yaw -= (c.look?.dx || 0) * k + (c.stick?.[0] || 0) * 2.8 * dt; C.pitch = clamp(C.pitch - (c.look?.dy || 0) * k - (c.stick?.[1] || 0) * 1.8 * dt, this.vista === 'fp' ? -1.15 : -.75, this.vista === 'fp' ? .7 : .25);
+    // sin mouse ni dedo, la cámara de atrás se acomoda sola detrás tuyo cuando caminás
+    if (this.vista === 'atras' && !c.trabado && !ctl.mira.on && !c.stick?.[0] && this.yo.mv > .5) C.yaw = lerpA(C.yaw, this.yo.ry, Math.min(1, dt * 1.4));
+  }
+  fov() { const por = innerHeight > innerWidth; return this.vista === 'fp' ? (por ? 80 : 72) : this.vista === 'atras' ? (por ? 68 : 60) : (por ? 50 : 40); }
+  foco() { const y = this.yo; if (this.vista === 'arriba') return this.cam; const f = this.vista === 'fp' ? 18 : 13; return {x: y.x + Math.sin(this.cam.yaw) * f, z: y.z + Math.cos(this.cam.yaw) * f}; }
   camara(dt) {
     const y = this.yo, c = this.cam, por = innerHeight > innerWidth; const D = por ? 33 : 27;
+    if (this.vista !== 'arriba') {
+      c.x = lerp(c.x, y.x, Math.min(1, dt * 12)); c.z = lerp(c.z, y.z, Math.min(1, dt * 12)); const sh = c.sh * c.sh * .5; c.sh = Math.max(0, c.sh - dt * 1.8);
+      const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw), cp = Math.cos(c.pitch), sp = Math.sin(c.pitch), alto = (y.montado ? (this.vista === 'fp' ? 1.12 : .62) : 0) + this.eventos.altura() + (y.dash?.vuela ? Math.sin(Math.min(1, y.dash.t / y.dash.dur) * Math.PI) * 3 * y.dash.vuela : 0);
+      if (this.vista === 'fp') { const bob = y.mv * Math.sin(y.ph * (y.montado ? 1 : 2)) * (y.montado ? .09 : .045), e = 1.62 + alto + bob + (y.vivo ? 0 : -1.2); const adel = y.montado ? -.4 : .18; this.camera.position.set(c.x + fx * adel + rnd(-sh, sh), e + rnd(-sh, sh), c.z + fz * adel + rnd(-sh, sh)); this.camera.lookAt(this.camera.position.x + fx * cp, e + sp, this.camera.position.z + fz * cp); }
+      else { const dd = y.montado ? 7.5 : 6.2, hx = c.x, hz = c.z, hy = 1.7 + alto; const px = hx - fx * cp * dd, pz = hz - fz * cp * dd, py = Math.max(.6, hy - sp * dd + .6); this.camera.position.set(px + rnd(-sh, sh), py + rnd(-sh, sh), pz + rnd(-sh, sh)); this.camera.lookAt(hx + fx * 2.5, hy + sp * 2.5, hz + fz * 2.5); }
+      return;
+    }
     c.x = lerp(c.x, y.x, Math.min(1, dt * 6)); c.z = lerp(c.z, y.z, Math.min(1, dt * 6)); c.d = lerp(c.d, D * (this.jefeB ? 1.12 : 1), Math.min(1, dt * 2));
     const el = .88, sh = c.sh * c.sh * .8; c.sh = Math.max(0, c.sh - dt * 1.8);
     this.camera.position.set(c.x + rnd(-sh, sh), Math.sin(el) * c.d + rnd(-sh, sh), c.z + Math.cos(el) * c.d + rnd(-sh, sh)); this.camera.lookAt(c.x, .6, c.z - (por ? 1.5 : 0));
@@ -359,13 +415,16 @@ export class Juego {
     const y = this.yo, t = this.t, s = this.stats();
     // vos
     const gl = y.buff.furia > t ? [1, .2, .1] : y.buff.escudo > t ? [.3, .6, 1] : [0, 0, 0], inv = t < (y.inv || 0) ? (Math.sin(t * 30) > 0 ? .3 : 0) : 0;
-    if (y.vivo || true) this.bt('h_' + this.p.ch).push(y.x, (y.dash ? .25 : 0), y.z, y.ry, 1, y.ph, y.mv, y.atk * y.atk, Math.max(y.fl * .8, inv), gl[0], gl[1], gl[2], y.vivo ? 0 : .7, y.vivo ? 0 : -1.3);
-    this.fx.draw(FX.SHADOW, y.x, .05, y.z, 0, .9, .9, [0, 0, 0], .5);
+    const vuelo = (y.dash?.vuela ? Math.sin(Math.min(1, y.dash.t / y.dash.dur) * Math.PI) * 3 * y.dash.vuela : 0) + this.eventos.altura(), cab = y.montado === true;
+    if (cab) this.bt('m_caballo', 40).push(y.x, vuelo, y.z, y.ry, 1, y.ph, y.mv, 0, 0, gl[0] * .5, gl[1] * .5, gl[2] * .5, 0, y.dash ? -.25 : 0, 0);
+    if (this.vista !== 'fp' && !this.vida.doma) this.bt('h_' + this.p.ch).push(y.x, (cab ? .62 : y.dash && !y.dash.vuela ? .25 : 0) + vuelo, y.z, y.ry, 1, cab ? 0 : y.ph, cab ? 0 : y.mv, y.atk * y.atk, Math.max(y.fl * .8, inv), gl[0], gl[1], gl[2], y.vivo ? 0 : .7, y.vivo ? 0 : -1.3);
+    this.fx.draw(FX.SHADOW, y.x, .05, y.z, 0, cab ? 1.4 : .9, cab ? 1.4 : .9, [0, 0, 0], .5);
     if (y.buff.escudo > t) this.fx.draw(FX.RUNE, y.x, .06, y.z, t, 1.6, 1.6, [.4, .7, 1], .6, .5);
     // otros jugadores
-    for (const o of this.otros.values()) { const g2 = o.fu ? [1, .2, .1] : o.es ? [.3, .6, 1] : [0, 0, 0]; this.bt('h_' + o.ch).push(o.x, o.d ? .25 : 0, o.z, o.ry, 1, o.ph, o.mv, o.at * o.at, 0, g2[0], g2[1], g2[2], o.hp <= 0 ? .7 : 0, o.hp <= 0 ? -1.3 : 0); this.fx.draw(FX.SHADOW, o.x, .05, o.z, 0, .9, .9, [0, 0, 0], .5); }
+    for (const o of this.otros.values()) { const g2 = o.fu ? [1, .2, .1] : o.es ? [.3, .6, 1] : [0, 0, 0]; if (o.ca) this.bt('m_caballo', 40).push(o.x, 0, o.z, o.ry, 1, o.ph * .7, o.mv); this.bt('h_' + o.ch).push(o.x, o.ca ? .62 : o.d ? .25 : 0, o.z, o.ry, 1, o.ph, o.mv, o.at * o.at, 0, g2[0], g2[1], g2[2], o.hp <= 0 ? .7 : 0, o.hp <= 0 ? -1.3 : 0); this.fx.draw(FX.SHADOW, o.x, .05, o.z, 0, .9, .9, [0, 0, 0], .5); }
     // gente de los pueblos
-    for (const n of this.npcs) { if (Math.abs(n.x - y.x) > 60 || Math.abs(n.z - y.z) > 60) continue; const look = Math.hypot(n.x - y.x, n.z - y.z) < 7 ? Math.atan2(y.x - n.x, y.z - n.z) : n.ry; n.ryv = n.ryv == null ? look : n.ryv + ang(look, n.ryv) * Math.min(1, dt * 4); this.bt(n.mod, 24).push(n.x, 0, n.z, n.ryv, 1, t + n.x, 0, 0); }
+    for (const n of this.npcs) { if (Math.abs(n.x - y.x) > 60 || Math.abs(n.z - y.z) > 60) continue; const look = Math.hypot(n.x - y.x, n.z - y.z) < 7 ? Math.atan2(y.x - n.x, y.z - n.z) : n.ry; n.ryv = n.ryv == null ? look : n.ryv + ang(look, n.ryv) * Math.min(1, dt * 4); this.bt(n.mod, 24).push(n.x, 0, n.z, n.ryv, 1, n.anda ? t * 8 : t + n.x, n.anda ? 1 : 0, 0); }
+    this.vida.dibujar(); this.eventos.dibujar(dt);
     // bichos
     for (const b of this.bichos.values()) {
       if (Math.abs(b.x - y.x) > 70 || Math.abs(b.z - y.z) > 70) continue; const tint = b.camp ? [1, .75, .15] : b.jefe ? [0, 0, 0] : [0, 0, 0];
@@ -373,6 +432,7 @@ export class Juego {
       this.bt(k, b.jefe ? 4 : 48).push(b.x, fy, b.z, b.ry, b.s, b.ph, b.mv, b.at * b.at, b.fl, tint[0] * .5, tint[1] * .5, tint[2] * .5, b.die);
       if (!b.die) this.fx.draw(FX.SHADOW, b.x, .05, b.z, 0, b.r * 1.5, b.r * 1.5, [0, 0, 0], .45);
       if (b.est & 8) this.fx.draw(FX.RUNE, b.x, .07, b.z, t * 3, b.r + .6, b.r + .6, [1, .9, .3], .5, .5);
+      if (b.ladron && !b.die) this.fx.draw(FX.GLOW, b.x, .06, b.z, 0, 2, 2, [1, .85, .3], .5, .5);
       if (b.camp && !b.die) this.fx.draw(FX.GLOW, b.x, .06, b.z, 0, b.r * 2.2, b.r * 2.2, [1, .7, .2], .35, .5);
     }
     // proyectiles

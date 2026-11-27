@@ -4,13 +4,15 @@ import {HEROES, FOES, OBJ, MISC, model} from '../lib/models.js';
 import {audio} from '../lib/audio.js';
 import {WEAPONS} from '../lib/data.js';
 import {KITS, DESBLOQUEO, CHARS, ENEMIES, BOSSES, OBJETOS, AMULETOS, RELIQ, GRADOS, costoMejora, xpSig, NIVEL_MAX} from '../shared/reglas.js';
-import {REG, ORDEN, RELIQUIAS, PUEBLOS, GUARIDAS, SALA, NORTE, SUR, LUGARES} from '../shared/mapa.js';
+import {REG, ORDEN, RELIQUIAS, PUEBLOS, GUARIDAS, SALA, NORTE, SUR, LUGARES, MAPA_V} from '../shared/mapa.js';
 import {esNoche} from '../shared/sim.js';
 import {Misiones, MIS} from './misiones.js';
 import {ctl, botones} from './controles.js';
 import {via} from './red.js';
+import {RES} from './mundo3d.js';
 
 const $ = s => document.querySelector(s);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const CLAVE = 'tierra-adentro';
 const ICH = {tajo: 'rebenque', onda: 'guitarra', charco: 'mate', pisoton: 'bota', giro: 'facon', orbita: 'vela', aura: 'brasa', carga: 'espuela', cura: 'yerba', escudo: 'poncho', lazo: 'lazo', lluvia: 'rayo', furia: 'garras'};
@@ -47,7 +49,7 @@ export class UI {
     this.imgMapa();
   }
   // ---------- guardado ----------
-  cargar() { let d = {perfiles: [], cfg: {}}; try { d = {...d, ...JSON.parse(localStorage.getItem(CLAVE) || '{}')}; } catch (e) { } this.cfg = Object.assign(this.cfg || {}, {mus: .6, sfx: .8, q: 'media', nums: 1}, d.cfg || {}); audio.vol.m = this.cfg.mus; audio.vol.s = this.cfg.sfx; return d; }
+  cargar() { let d = {perfiles: [], cfg: {}}; try { d = {...d, ...JSON.parse(localStorage.getItem(CLAVE) || '{}')}; } catch (e) { } this.cfg = Object.assign(this.cfg || {}, {mus: .6, sfx: .8, q: 'media', nums: 1, vista: 'arriba'}, d.cfg || {}); audio.vol.m = this.cfg.mus; audio.vol.s = this.cfg.sfx; return d; }
   guardar() {
     const p = this.perfil, j = this.juego; if (p && j.activo) { p.pos = {x: Math.round(j.yo.x * 10) / 10, z: Math.round(j.yo.z * 10) / 10}; p.hpPct = j.yo.vivo ? Math.max(.2, j.yo.hp / j.stats().vida) : 1; p.t = (p.t || 0); }
     try { localStorage.setItem(CLAVE, JSON.stringify({perfiles: this.datos.perfiles, cfg: this.cfg})); } catch (e) { }
@@ -60,7 +62,7 @@ export class UI {
     const hay = this.datos.perfiles.length;
     const e = this.show('inicio', `<div class="scr" id="inicio"><h1>Noche de Salamanca<span>Tierra Adentro</span></h1><div class="guarda"></div>
       <div class="menu">${hay ? '<button data-a="seguir">Seguir jugando</button>' : ''}<button data-a="nuevo">Nuevo personaje</button>${hay > 1 ? '<button data-a="lista">Mis personajes</button>' : ''}<button data-a="op">Opciones</button></div>
-      <p class="pie">Un mundo abierto de leyendas argentinas, para jugar solo o con hasta 10 personas.</p></div>`);
+      <p class="pie">Un mundo abierto de leyendas argentinas, para jugar solo o con hasta 12 personas.</p></div>`);
     e.querySelector('.menu').onclick = ev => { const a = ev.target.closest('button')?.dataset.a; if (!a) return; audio.init(); audio.play('ok');
       if (a === 'seguir') { const p = [...this.datos.perfiles].sort((x, y) => (y.ult || 0) - (x.ult || 0))[0]; this.modo(p); } if (a === 'nuevo') this.crear(); if (a === 'lista') this.lista(); if (a === 'op') this.opciones(); };
     audio.track('menu');
@@ -99,7 +101,8 @@ export class UI {
     }
   }
   async jugar(p, modo) {
-    this.perfil = p; p.ult = Date.now(); const hola = {n: p.nombre, ch: p.ch, lv: p.lv, hp: 1, x: p.pos?.x ?? REG.pampa.pueblo.x, z: p.pos?.z ?? REG.pampa.pueblo.z};
+    this.perfil = p; p.ult = Date.now(); if (p.mapa !== MAPA_V) { p.pos = null; p.mapa = MAPA_V; p.entierros = {}; }
+    const hola = {n: p.nombre, ch: p.ch, lv: p.lv, hp: 1, x: p.pos?.x ?? REG.pampa.pueblo.x, z: p.pos?.z ?? REG.pampa.pueblo.z};
     this.red.cerrar(); if (modo === 'solo') this.red.solo(hola); else { const ok = await this.red.conectar(hola); if (!ok) { this.red.cerrar(); return false; } }
     this.juego.empezar(p, this.red); this.show('', ''); this.scr = 'juego'; $('#hud').hidden = false; document.body.classList.add('jugando');
     this.armarHud(); this.seguimiento();
@@ -112,7 +115,7 @@ export class UI {
     const p = this.perfil, K = KITS[p.ch];
     $('#cara').src = this.icon('h_' + p.ch); $('#nom2').textContent = p.nombre;
     const slot = (k, ic, key, lab) => `<button class="hab" data-b="${k}" aria-label="${esc(lab)}"><img alt="" src="${ic}"><i></i><kbd>${key}</kbd><em></em></button>`;
-    $('#habs').innerHTML = slot('atk', this.icon(icoHab(K.basico)), 'Clic', 'Atacar') + K.h.map((h, i) => slot('h' + i, this.icon(icoHab(h.ef[0])), 'QER'[i], h.n)).join('') + slot('esq', this.icon('espuela'), 'Espacio', 'Esquivar') + slot('mate', this.icon('mate'), 'H', 'Tomar mate');
+    $('#habs').innerHTML = slot('atk', this.icon(icoHab(K.basico)), 'Clic', 'Atacar') + K.h.map((h, i) => slot('h' + i, this.icon(icoHab(h.ef[0])), 'QER'[i], h.n)).join('') + slot('esq', this.icon('espuela'), 'Espacio', 'Esquivar') + slot('mate', this.icon('mate'), 'H', 'Tomar mate') + (p.caballo ? slot('caballo', this.icon('herradura'), 'G', 'Caballo: ' + p.caballo.n) : '');
     botones($('#habs'));
   }
   hud() {
@@ -140,7 +143,8 @@ export class UI {
   cerca(c) {
     const u = $('#usar'); const k = c ? (c.tipo === 'npc' ? c.ref.id : c.tipo + (c.ref.id ?? '')) : ''; if (k === this.cercaK) return; this.cercaK = k;
     if (!c) { u.hidden = true; return; } u.hidden = false;
-    const t = {npc: () => `Hablar con ${this.nombreNpc(c.ref)}`, fogon: () => 'Fogón: descansar y viajar', santuario: () => 'Prenderle una vela al Gauchito', difunta: () => 'Dejarle agua a la Difunta Correa', entierro: () => 'Cavar', apacheta: () => 'Dejar una piedra en la apacheta'}[c.tipo]();
+    const t = {npc: () => `Hablar con ${this.nombreNpc(c.ref)}`, fogon: () => 'Fogón: descansar y viajar', santuario: () => 'Prenderle una vela al Gauchito', difunta: () => 'Dejarle agua a la Difunta Correa', entierro: () => 'Cavar', apacheta: () => 'Dejar una piedra en la apacheta',
+      aljibe: () => 'Tomar agua del aljibe', bagual: () => 'Domar al bagual', caballo: () => `Subirte a ${this.perfil.caballo?.n || 'tu caballo'}`, gente: () => `Charlar con ${CHARS[c.ref.ch]?.n || 'el vecino'}`, perro: () => 'Acariciar al perro', tesoro: () => 'Cavar el entierro de la Luz Mala', carreta: () => 'Comprarle al mercachifle'}[c.tipo]();
     u.innerHTML = `<kbd>F</kbd><span>${esc(t)}</span>`;
   }
   nombreNpc(n) { if (n.ch) return CHARS[n.ch].n; return {pulpero: 'el pulpero', herrero: 'el herrero', posta: 'el mercachifle'}[n.rol] || ROL[n.rol]; }
@@ -148,6 +152,9 @@ export class UI {
     const j = this.juego, p = this.perfil, t = j.t; audio.play('ok');
     if (c.tipo === 'npc') return this.hablar(c.ref);
     if (c.tipo === 'fogon') return this.fogon(c.ref);
+    if (['bagual', 'caballo', 'gente', 'perro'].includes(c.tipo)) return j.vida.usar(c);
+    if (['tesoro', 'carreta'].includes(c.tipo)) return j.eventos.usar(c);
+    if (c.tipo === 'aljibe') { const k = 'aljibe' + Math.round(c.ref.x) + ',' + Math.round(c.ref.z); if ((j.lugCd[k] || -1e9) > t) { this.toast('Ya tomaste. Esperá un ratito.', 'agua', 1.5); return; } j.lugCd[k] = t + 45; j.curar(.3); audio.play('splash'); j.parts.burst(c.ref.x, 1, c.ref.z, 14, [.6, .8, 1], {sp: 3, size: .3, life: .6}); this.toast('Agua fresquita del aljibe.', 'agua', 2); return; }
     const id = c.tipo + c.ref.id; if ((j.lugCd[id] || -1e9) > t) { this.toast('Ya hiciste tu promesa acá. Volvé más tarde.', null, 2); return; }
     if (c.tipo === 'santuario') { j.lugCd[id] = t + 180; j.curar(1); j.yo.buff.santo = t + 300; this.toast('Le prendiste una vela al Gauchito Gil: +10% de daño por 5 minutos.', 'vela', 4); }
     if (c.tipo === 'difunta') { j.lugCd[id] = t + 180; j.curar(1); j.yo.buff.difunta = t + 300; this.toast('Le dejaste agua a la Difunta Correa: te curás más rápido por 5 minutos.', 'agua', 4); }
@@ -162,7 +169,7 @@ export class UI {
     }
   }
   // ---------- paneles ----------
-  abrir(id, html, cls = '') { this.cerrarPanel(); const d = document.createElement('div'); d.className = 'modal ' + cls; d.id = id; d.innerHTML = `<div class="caja">${html}<button class="x" aria-label="Cerrar">✕</button></div>`; $('#ui').append(d); d.querySelector('.x').onclick = () => this.cerrarPanel(); d.onclick = e => { if (e.target === d) this.cerrarPanel(); }; this.panel = d; if (this.red.modo === 'solo') this.red.pausa = true; return d; }
+  abrir(id, html, cls = '') { this.cerrarPanel(); if (document.pointerLockElement) document.exitPointerLock?.(); const d = document.createElement('div'); d.className = 'modal ' + cls; d.id = id; d.innerHTML = `<div class="caja">${html}<button class="x" aria-label="Cerrar">✕</button></div>`; $('#ui').append(d); d.querySelector('.x').onclick = () => this.cerrarPanel(); d.onclick = e => { if (e.target === d) this.cerrarPanel(); }; this.panel = d; if (this.red.modo === 'solo') this.red.pausa = true; return d; }
   cerrarPanel() { if (this.panel) { this.panel.remove(); this.panel = null; } this.red.pausa = false; }
   hablar(npc) {
     const nom = this.nombreNpc(npc), ic = npc.ch ? 'h_' + npc.ch : npc.mod?.startsWith('m_') ? npc.mod : 'h_asador';
@@ -184,16 +191,18 @@ export class UI {
     e.onclick = ev => { const b = ev.target.closest('button'); if (!b) return; if (b.dataset.a) { j.curar(1); this.guardar(); this.toast('Descansaste junto al fogón. Partida guardada.', 'brasa', 2.5); audio.play('heal'); this.cerrarPanel(); }
       if (b.dataset.v) { const o = PUEBLOS.find(x => x.id === b.dataset.v), c = costo(o); if (p.oro < c) { this.toast('No te alcanza la plata.', 'plata', 2); return; } p.oro -= c; j.yo.x = o.x + 2; j.yo.z = o.z + 5; j.cam.x = j.yo.x; j.cam.z = j.yo.z; j.yo.inv = j.t + 2; j.enviar(true); this.cerrarPanel(); this.toast('Llegaste a ' + o.n, 'brasa', 2.5); audio.play('whistle'); this.guardar(); } };
   }
-  tienda(tipo) {
+  tienda(tipo, stock) {
     const p = this.perfil, j = this.juego, w = WEAPONS[CHARS[p.ch].w]?.n || 'Arma';
     const pint = () => {
       let h = '';
+      if (tipo === 'carreta') h = `<h2>La carreta del mercachifle</h2><p class="tip">Tenés ${p.oro} $. Lo que trae hoy, mañana quién sabe.</p><div class="lst">${stock.am.map(o => `<div class="fila2"><img alt="" src="${this.icon(AMULETOS[o.k].ic)}"><div><b>${AMULETOS[o.k].n}</b><span>${AMULETOS[o.k].d}${p.amuletos[o.k] ? ` Tenés ${p.amuletos[o.k]}.` : ''}</span></div><button class="btn" data-ca="${o.k}" data-p="${o.precio}">${o.precio} $</button></div>`).join('')}${stock.it.map(o => `<div class="fila2"><img alt="" src="${this.icon(OBJETOS[o.k].ic)}"><div><b>${OBJETOS[o.k].n}</b><span>${OBJETOS[o.k].d} Tenés ${p.inv[o.k] || 0}.</span></div><button class="btn" data-ci="${o.k}" data-p="${o.precio}">${o.precio} $</button></div>`).join('')}</div>`;
       if (tipo === 'pulperia') h = `<h2>Pulpería</h2><p class="tip">Tenés ${p.oro} $.</p><div class="lst">${['mate', 'asado', 'cana'].map(k => `<div class="fila2"><img alt="" src="${this.icon(OBJETOS[k].ic)}"><div><b>${OBJETOS[k].n}</b><span>${OBJETOS[k].d} Tenés ${p.inv[k] || 0}.</span></div><button class="btn" data-c="${k}">${OBJETOS[k].precio} $</button></div>`).join('')}</div>`;
       if (tipo === 'herreria') { const fila = (k, n, g) => { if (g >= 6) return `<div class="fila2"><div><b>${n} ${GRADOS[g - 1]}</b><span>Ya está al máximo.</span></div></div>`; const c = costoMejora(g); const ok = p.oro >= c.oro && (p.inv.retazo || 0) >= c.retazos && p.lv >= c.nivel; return `<div class="fila2"><div><b>${n}: ${GRADOS[g - 1]} → ${GRADOS[g]}</b><span>${c.oro} $ y ${c.retazos} retazos de leyenda${p.lv < c.nivel ? ` · necesitás nivel ${c.nivel}` : ''}. Tenés ${p.inv.retazo || 0} retazos.</span></div><button class="btn" data-m="${k}" ${ok ? '' : 'disabled'}>Mejorar</button></div>`; };
         h = `<h2>Herrería</h2><p class="tip">Tenés ${p.oro} $. Cada mejora del arma suma 30% de daño; la del poncho, vida y aguante.</p><div class="lst">${fila('arma', w, p.arma)}${fila('poncho', 'Poncho', p.poncho)}</div>`; }
       if (tipo === 'mercachifle') { const ks = Object.keys(p.amuletos).filter(k => p.amuletos[k] > (p.amuleto === k ? 1 : 0)); h = `<h2>Mercachifle</h2><p class="tip">Te compro los amuletos que te sobran a 80 $ cada uno.</p><div class="lst">${ks.length ? ks.map(k => `<div class="fila2"><img alt="" src="${this.icon(AMULETOS[k].ic)}"><div><b>${AMULETOS[k].n} ×${p.amuletos[k]}</b><span>${AMULETOS[k].d}</span></div><button class="btn" data-v="${k}">Vender</button></div>`).join('') : '<p class="tip">No tenés amuletos para vender.</p>'}</div>`; }
       const e = this.abrir('tienda', h);
       e.onclick = ev => { const b = ev.target.closest('button'); if (!b || b.disabled) return;
+        if (b.dataset.ca || b.dataset.ci) { const pr = +b.dataset.p; if (p.oro < pr) { this.toast('No te alcanza.', 'plata', 1.5); return; } p.oro -= pr; if (b.dataset.ca) { p.amuletos[b.dataset.ca] = (p.amuletos[b.dataset.ca] || 0) + 1; audio.play('gem'); } else { p.inv[b.dataset.ci] = (p.inv[b.dataset.ci] || 0) + 1; audio.play('coin'); } this.misiones.alEvento('carreta'); this.guardar(); pint(); return; }
         if (b.dataset.c) { const o = OBJETOS[b.dataset.c]; if (p.oro < o.precio) { this.toast('No te alcanza.', 'plata', 1.5); return; } p.oro -= o.precio; p.inv[b.dataset.c] = (p.inv[b.dataset.c] || 0) + 1; audio.play('coin'); this.guardar(); pint(); }
         if (b.dataset.m) { const k = b.dataset.m, c = costoMejora(p[k]); p.oro -= c.oro; p.inv.retazo -= c.retazos; p[k]++; audio.play('evo'); this.toast(`${k === 'arma' ? w : 'Poncho'} ${GRADOS[p[k] - 1]}`, k === 'arma' ? icoHab(KITS[p.ch].basico) : 'poncho', 3); j.yo.hp = Math.min(j.yo.hp, j.stats().vida); this.guardar(); pint(); }
         if (b.dataset.v) { const k = b.dataset.v; p.amuletos[k]--; if (!p.amuletos[k]) delete p.amuletos[k]; p.oro += 80; audio.play('coin'); this.guardar(); pint(); } };
@@ -219,19 +228,20 @@ export class UI {
   opciones() {
     const c = this.cfg, en = !!this.juego.activo;
     const e = this.abrir('op', `<h2>Opciones</h2><label class="rng">Música <input type="range" min="0" max="1" step=".05" value="${c.mus}" data-k="mus"></label><label class="rng">Sonidos <input type="range" min="0" max="1" step=".05" value="${c.sfx}" data-k="sfx"></label>
+      <label class="rng">Cámara <select data-k="vista">${[['arriba', 'Desde arriba'], ['atras', 'Desde atrás'], ['fp', 'Primera persona']].map(([v, n]) => `<option value="${v}" ${(this.juego.vista || c.vista) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       <label class="rng">Gráficos <select data-k="q">${['baja', 'media', 'alta'].map(q => `<option value="${q}" ${c.q === q ? 'selected' : ''}>${q[0].toUpperCase() + q.slice(1)}</option>`).join('')}</select></label>
-      <h3>Controles</h3><p class="tip">Compu: WASD para moverte, el mouse apunta, clic ataca, Q E R habilidades, Espacio esquiva, H toma mate, F habla, M mapa, I inventario, L misiones, Enter chat.<br>Celular: joystick a la izquierda y botones a la derecha. Joystick de consola: A ataca, X / RB / RT habilidades, B esquiva, Y habla.</p>
+      <h3>Controles</h3><p class="tip">Compu: WASD para moverte, el mouse apunta, clic ataca, Q E R habilidades, Espacio esquiva, H toma mate, F habla, G llama o baja del caballo, V cambia la cámara, M mapa, I inventario, L misiones, Enter chat. En primera persona y desde atrás, hacé clic para mirar con el mouse (Esc lo suelta).<br>Celular: joystick a la izquierda y botones a la derecha; con la cámara de atrás o en primera persona, arrastrá el dedo en la mitad derecha para mirar. Joystick de consola: A ataca, X / RB / RT habilidades, B esquiva, Y habla, palanca derecha mira, apretar la izquierda llama al caballo y la derecha cambia la cámara.</p>
       ${en ? '<button class="btn sec" data-a="salir">Guardar y salir al inicio</button>' : ''}`);
-    e.oninput = ev => { const k = ev.target.dataset.k; if (!k) return; c[k] = k === 'q' ? ev.target.value : +ev.target.value; audio.vol.m = c.mus; audio.vol.s = c.sfx; this.guardar(); if (k === 'q') this.toast('Se aplica la próxima vez que abras el juego.', null, 3); };
+    e.oninput = ev => { const k = ev.target.dataset.k; if (!k) return; if (k === 'vista') { c.vista = ev.target.value; if (this.juego.activo) this.juego.cambiarVista(c.vista); this.guardar(); return; } c[k] = k === 'q' ? ev.target.value : +ev.target.value; audio.vol.m = c.mus; audio.vol.s = c.sfx; this.guardar(); if (k === 'q') this.toast('Se aplica la próxima vez que abras el juego.', null, 3); };
     e.onclick = ev => { if (ev.target.dataset?.a === 'salir') this.salir(); };
   }
   abrirChat() { if (this.red.modo !== 'online') { this.toast('El chat es para el mundo compartido.', null, 2); return; } const ci = $('#chatin'); ci.hidden = false; ci.focus(); }
   chat(m) { const d = document.createElement('p'); const b = document.createElement('b'); b.textContent = m.n + ': '; d.append(b, document.createTextNode(m.m)); $('#chatlog').append(d); while ($('#chatlog').children.length > 6) $('#chatlog').firstChild.remove(); setTimeout(() => d.classList.add('fue'), 15000); audio.play('pick'); }
   // ---------- mapa ----------
   imgMapa() {
-    const M = this.mundo, W = M.dA ? Math.round(M.uS?.x) : 0; const TW = this.mundo.u.uS.value.x / 3, TH = this.mundo.u.uS.value.y / 3; const c = document.createElement('canvas'); c.width = TW; c.height = TH; const x = c.getContext('2d'), im = x.createImageData(TW, TH);
+    const M = this.mundo, W = M.dA ? Math.round(M.uS?.x) : 0; const TW = this.mundo.u.uS.value.x / RES, TH = this.mundo.u.uS.value.y / RES; const c = document.createElement('canvas'); c.width = TW; c.height = TH; const x = c.getContext('2d'), im = x.createImageData(TW, TH);
     for (let i = 0; i < TW * TH; i++) { const o = i * 4, a = M.dA, b = M.dB; let r = a[o], g = a[o + 1], bl = a[o + 2]; if (b[o + 3] > 30) { r = 50; g = 100; bl = 160; } else if (a[o + 3] > 110) { r = 170; g = 140; bl = 100; } const out = M.dC[o] > 200; im.data[o] = r * (out ? .6 : 1); im.data[o + 1] = g * (out ? .6 : 1); im.data[o + 2] = bl * (out ? .6 : 1); im.data[o + 3] = 255; }
-    x.putImageData(im, 0, 0); this.mapaC = c; this.mapaO = {x: this.mundo.u.uO.value.x, z: this.mundo.u.uO.value.y, k: 3};
+    x.putImageData(im, 0, 0); this.mapaC = c; this.mapaO = {x: this.mundo.u.uO.value.x, z: this.mundo.u.uO.value.y, k: RES};
   }
   mapa() {
     const e = this.abrir('mapa', `<h2>Mapa</h2><canvas id="mapac"></canvas><p class="tip">★ tu misión · ☠ jefes · ⌂ pueblos (los que conocés, en blanco)</p>`, 'ancho');
@@ -246,6 +256,7 @@ export class UI {
     for (const o of j.lista || []) { if (o[0] === this.red.yo) continue; const [a, b] = P(o[4], o[5]); x.fillStyle = '#8ec5e8'; x.beginPath(); x.arc(a, b, 4 * devicePixelRatio, 0, 7); x.fill(); }
     const [a, b] = P(j.yo.x, j.yo.z); x.fillStyle = '#e8453c'; x.strokeStyle = '#fff'; x.lineWidth = 2 * devicePixelRatio; x.beginPath(); x.arc(a, b, 6 * devicePixelRatio, 0, 7); x.fill(); x.stroke();
   }
+  doma(on, eq = 0, k = 0) { const d = $('#doma'); d.hidden = !on; if (!on) return; d.querySelector('.eq i').style.left = (50 + clamp(eq, -1, 1) * 48) + '%'; d.querySelector('.tiempo i').style.width = k * 100 + '%'; }
   // ---------- capa 2D: barras, nombres y números ----------
   dibujarOv(dt, camera) {
     const W = innerWidth, H = innerHeight, dpr = Math.min(2, devicePixelRatio || 1), cv = this.ov; if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
@@ -263,8 +274,15 @@ export class UI {
     // números
     for (let i = j.nums.length - 1; i >= 0; i--) { const n = j.nums[i]; n.t += dt; if (n.t > 1) { j.nums.splice(i, 1); continue; } const p = P(n.x, n.y + n.t * 1.6, n.z); if (!p) continue; x.globalAlpha = 1 - Math.max(0, n.t - .6) / .4; x.font = `800 ${Math.round(18 * n.s)}px "Alegreya Sans",sans-serif`; x.lineWidth = 3; x.strokeStyle = 'rgba(0,0,0,.7)'; x.strokeText(n.txt, p[0], p[1]); x.fillStyle = n.col; x.fillText(n.txt, p[0], p[1]); }
     x.globalAlpha = 1;
+    // con la cámara de atrás o en primera persona: una mira en el medio y flechas arriba
+    const fp = j.vista !== 'arriba';
+    if (fp && j.yo.vivo) { x.strokeStyle = 'rgba(255,240,210,.85)'; x.lineWidth = 2; x.beginPath(); x.arc(W / 2, H / 2, 7, 0, 7); x.moveTo(W / 2 - 14, H / 2); x.lineTo(W / 2 - 9, H / 2); x.moveTo(W / 2 + 9, H / 2); x.lineTo(W / 2 + 14, H / 2); x.stroke(); }
+    const flechaArriba = (d, col, i) => { const dx = d.x - j.yo.x, dz = d.z - j.yo.z, L = Math.hypot(dx, dz); if (L < 12) return; const a = Math.atan2(dx, dz) - j.cam.yaw, rel = -Math.atan2(Math.sin(a), Math.cos(a)), cx = W / 2 + clamp(rel / 1.2, -1, 1) * Math.min(W * .4, 260), cy = 96 + i * 40; x.save(); x.translate(cx, cy); x.rotate(Math.abs(rel) > 1.2 ? Math.sign(rel) * Math.PI / 2 : 0); x.fillStyle = col; x.beginPath(); x.moveTo(0, -12); x.lineTo(-8, 6); x.lineTo(0, 2); x.lineTo(8, 6); x.fill(); x.restore(); x.fillStyle = col; x.font = '700 12px "Alegreya Sans",sans-serif'; x.fillText((d.n ? d.n + ' · ' : '') + Math.round(L) + ' m', cx, cy + 22); };
+    const ev = j.eventos.objetivo(); const evb = $('#evb'), bt = j.eventos.banner(); if (evb.textContent !== bt) evb.textContent = bt; evb.hidden = !bt;
+    if (ev && j.yo.vivo) { if (fp) flechaArriba(ev, '#8ec5e8', 1); else { const dx = ev.x - j.yo.x, dz = ev.z - j.yo.z, L = Math.hypot(dx, dz); if (L > 10) { const a = Math.atan2(dx, dz), c = P(j.yo.x + Math.sin(a) * 2.4, .2, j.yo.z + Math.cos(a) * 2.4), c0 = P(j.yo.x, .2, j.yo.z); if (c && c0) { const an = Math.atan2(c[1] - c0[1], c[0] - c0[0]); x.save(); x.translate(c[0], c[1]); x.rotate(an); x.fillStyle = 'rgba(142,197,232,.9)'; x.beginPath(); x.moveTo(10, 0); x.lineTo(-5, -7); x.lineTo(-2, 0); x.lineTo(-5, 7); x.fill(); x.restore(); x.fillStyle = '#8ec5e8'; x.font = '700 12px "Alegreya Sans",sans-serif'; x.fillText(ev.n + ' · ' + Math.round(L) + ' m', c[0], c[1] + 18); } } } }
     // flecha hacia la misión
-    const m = this.track && MIS[this.track]; if (m && j.yo.vivo) { const d = this.misiones.destino(m), dx = d.x - j.yo.x, dz = d.z - j.yo.z, L = Math.hypot(dx, dz); if (L > 18) { const a = Math.atan2(dx, dz), c = P(j.yo.x + Math.sin(a) * 3, .2, j.yo.z + Math.cos(a) * 3), c0 = P(j.yo.x, .2, j.yo.z); if (c && c0) { const ang = Math.atan2(c[1] - c0[1], c[0] - c0[0]); x.save(); x.translate(c[0], c[1]); x.rotate(ang); x.fillStyle = 'rgba(255,210,58,.9)'; x.beginPath(); x.moveTo(12, 0); x.lineTo(-6, -8); x.lineTo(-2, 0); x.lineTo(-6, 8); x.fill(); x.restore(); x.fillStyle = '#ffd23a'; x.font = '700 12px "Alegreya Sans",sans-serif'; x.fillText(Math.round(L) + ' m', c[0], c[1] + 20); } } }
+    const m = this.track && MIS[this.track]; if (m && j.yo.vivo && fp) flechaArriba(this.misiones.destino(m), '#ffd23a', 0);
+    if (m && j.yo.vivo && !fp) { const d = this.misiones.destino(m), dx = d.x - j.yo.x, dz = d.z - j.yo.z, L = Math.hypot(dx, dz); if (L > 18) { const a = Math.atan2(dx, dz), c = P(j.yo.x + Math.sin(a) * 3, .2, j.yo.z + Math.cos(a) * 3), c0 = P(j.yo.x, .2, j.yo.z); if (c && c0) { const ang = Math.atan2(c[1] - c0[1], c[0] - c0[0]); x.save(); x.translate(c[0], c[1]); x.rotate(ang); x.fillStyle = 'rgba(255,210,58,.9)'; x.beginPath(); x.moveTo(12, 0); x.lineTo(-6, -8); x.lineTo(-2, 0); x.lineTo(-6, 8); x.fill(); x.restore(); x.fillStyle = '#ffd23a'; x.font = '700 12px "Alegreya Sans",sans-serif'; x.fillText(Math.round(L) + ' m', c[0], c[1] + 20); } } }
     // jefe
     if (this.jefeId) { const b = j.bichos.get(this.jefeId); $('#jefeb i').style.width = (b ? b.hp * 100 : 0) + '%'; }
     this.minimapa();

@@ -13,7 +13,7 @@ const NOISE = `float h21(vec2 p){p=fract(p*vec2(123.34,345.45));p+=dot(p,p+34.34
 const DIA = {top: 0x2f7acc, mid: 0x86c0ee, hor: 0xeef2e0, sun: 0xfff0d0, sunI: 2.9, hs: 0xdcecff, hg: 0x6a6a4a, hi: 1.0, fog: 0xc4d8e4, star: 0, rim: 0xfff4e0, rk: .45};
 const TARDE = {top: 0x2a3a78, mid: 0xd8705a, hor: 0xffc46a, sun: 0xffc48a, sunI: 2.6, hs: 0xffdcc0, hg: 0x55563a, hi: 1.05, fog: 0xd8966a, star: .12, rim: 0xffb070, rk: .75};
 const NOCHE = {top: 0x050a22, mid: 0x142450, hor: 0x46588e, sun: 0xb4caff, sunI: 1.9, hs: 0xa8bcff, hg: 0x30343a, hi: 1.3, fog: 0x1e2e5a, star: 1, rim: 0x9ac0ff, rk: .95};
-const RES = 3, X0 = -500, Z0 = NORTE - 30, TW = Math.ceil(1000 / RES), TH = Math.ceil((SUR - NORTE + 60) / RES);
+export const RES = 2; const X0 = -262, Z0 = NORTE - 30, TW = Math.ceil(524 / RES), TH = Math.ceil((SUR - NORTE + 60) / RES);
 const PALS = Object.fromEntries(ORDEN.map(k => [k, palette(k, 0)]));
 
 export class Mundo3D {
@@ -30,7 +30,8 @@ export class Mundo3D {
     this.fuego = new THREE.PointLight(0xff8a3a, 0, 20, 1.6); scene.add(this.fuego);
     this.fxL = new THREE.PointLight(0xffffff, 0, 30, 1.6); scene.add(this.fxL);
     this.mat = charMaterial({rough: .9, fade: this.u.pv});
-    this.texturas(); this.cielo(); this.piso(); this.pasto(); this.bichitos(); this.borde();
+    this.vista = 'arriba'; this.lluvia = 0;
+    this.texturas(); this.cielo(); this.piso(); this.pasto(); this.bichitos(); this.borde(); this.lluviaInit();
   }
   // ---------- texturas del piso: color del pasto y de la tierra, caminos, agua ----------
   texturas() {
@@ -43,7 +44,7 @@ export class Mundo3D {
       const r = dentro(x, z, -40) ? regionEn(x, z) : (z > 0 ? 'sur' : x < 0 ? 'puna' : 'selva'); const c = col[idx[r]]; this.reg[k] = idx[r];
       A[o] = c.a.r * 255; A[o + 1] = c.a.g * 255; A[o + 2] = c.a.b * 255; A[o + 3] = clamp((3.4 - camino(x, z)) / 3.4, 0, 1) * 255;
       Bt[o] = c.b.r * 255; Bt[o + 1] = c.b.g * 255; Bt[o + 2] = c.b.b * 255; Bt[o + 3] = Math.min(1.5, agua(x, z)) / 1.5 * 255;
-      const out = !dentro(x, z, 0); Cc[o] = (tierra[r] + (out ? .3 : 0)) * 255; Cc[o + 1] = clamp((z - 470) / 120, 0, 1) * 255; Cc[o + 2] = r === 'salamanca' ? 255 : 0; Cc[o + 3] = c.gr * 255;
+      const out = !dentro(x, z, 0); Cc[o] = (tierra[r] + (out ? .3 : 0)) * 255; Cc[o + 1] = clamp((z - 235) / 60, 0, 1) * 255; Cc[o + 2] = r === 'salamanca' ? 255 : 0; Cc[o + 3] = c.gr * 255;
     }
     // suavizar el cambio de color entre territorios
     for (const T of [A, Bt]) { const t = new Uint8Array(T); for (let p = 0; p < 2; p++) for (let j = 1; j < TH - 1; j++) for (let i = 1; i < TW - 1; i++) { const k = (j * TW + i) * 4; for (let c = 0; c < 3; c++) T[k + c] = (t[k + c] * 4 + t[k + c - 4] + t[k + c + 4] + t[k + c - TW * 4] + t[k + c + TW * 4]) / 8; } }
@@ -138,13 +139,24 @@ export class Mundo3D {
       fragmentShader: `uniform vec3 col;varying float vA;void main(){float d=length(gl_PointCoord-.5);gl_FragColor=vec4(col*vA*smoothstep(.5,.1,d),0.);}`});
     const pt = new THREE.Points(g, m); pt.frustumCulled = false; pt.renderOrder = 3; this.scene.add(pt);
   }
+  // ---------- lluvia: rayitas que caen alrededor de la cámara ----------
+  lluviaInit() {
+    const n = this.q === 'baja' ? 700 : 1500, p = new Float32Array(n * 6), e = new Float32Array(n * 2), k = new Float32Array(n * 2), q = mul(19);
+    for (let i = 0; i < n; i++) { const x = q() * 60 - 30, y = q() * 16, z = q() * 60 - 30, r = q(); p.set([x, y, z, x, y, z], i * 6); e[i * 2] = 0; e[i * 2 + 1] = 1; k[i * 2] = k[i * 2 + 1] = r; }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3)); g.setAttribute('aE', new THREE.BufferAttribute(e, 1)); g.setAttribute('aK', new THREE.BufferAttribute(k, 1));
+    this.rU = {uTime: U.uTime, op: {value: 0}, ctr: {value: new THREE.Vector3()}};
+    const m = new THREE.ShaderMaterial({transparent: true, depthWrite: false, uniforms: this.rU,
+      vertexShader: `attribute float aE,aK;uniform float uTime,op;uniform vec3 ctr;varying float vA;void main(){vec3 p=position;p.y=mod(p.y-uTime*(19.+aK*9.),16.)-1.;p.x=mod(p.x-ctr.x+30.,60.)-30.+ctr.x;p.z=mod(p.z-ctr.z+30.,60.)-30.+ctr.z;p+=aE*vec3(.16,-.95,.06);vA=op*(1.-aE*.7)*smoothstep(-1.,.5,p.y);gl_Position=projectionMatrix*viewMatrix*vec4(p,1.);}`,
+      fragmentShader: `varying float vA;void main(){gl_FragColor=vec4(vec3(.78,.84,.96),vA*.55);}`});
+    const l = new THREE.LineSegments(g, m); l.frustumCulled = false; l.renderOrder = 4; l.visible = false; this.scene.add(l); this.lluviaL = l;
+  }
   // ---------- afuera del mapa: cordillera al oeste y al norte, selva al noreste, hielo al sur ----------
   borde() {
     const L = this.fuera = [], q = mul(91);
-    for (let z = NORTE - 40; z < SUR + 40; z += 22) { const [o] = bordeX(z); for (let k = 0; k < 3; k++) L.push({t: 'cerro', x: o - 16 - k * 26 - q() * 10, z: z + q() * 12, ry: q() * 6.28, s: 2.2 + q() * 1.6 + k * .8}); }
-    for (let x = -520; x < 520; x += 22) { const sel = x > 120; for (let k = 0; k < 3; k++) L.push(sel ? {t: k ? 'arbolote' : 'tacuara', x: x + q() * 10, z: NORTE - 6 - k * 9 - q() * 6, ry: q() * 6.28, s: 1.3 + q() * .5} : {t: 'cerro', x: x + q() * 10, z: NORTE - 18 - k * 26, ry: q() * 6.28, s: 2.2 + q() * 1.5 + k * .8}); }
-    for (let z = NORTE; z < -70; z += 9) { const [, e] = bordeX(z); for (let k = 0; k < 3; k++) L.push({t: q() < .3 ? 'tacuara' : 'arbolote', x: e + 4 + k * 9 + q() * 5, z: z + q() * 6, ry: q() * 6.28, s: 1.2 + q() * .5}); }
-    for (let x = -480; x < 120; x += 14) for (let k = 0; k < 2; k++) L.push({t: 'hieloB', x: x + q() * 8, z: SUR + 4 + k * 10 + q() * 4, ry: q() * 6.28, s: 2 + q() * 1.5});
+    for (let z = NORTE - 40; z < SUR + 40; z += 18) { const [o] = bordeX(z); for (let k = 0; k < 3; k++) L.push({t: 'cerro', x: o - 14 - k * 24 - q() * 8, z: z + q() * 10, ry: q() * 6.28, s: 2 + q() * 1.5 + k * .8}); }
+    for (let x = -290; x < 290; x += 18) { const sel = x > 60; for (let k = 0; k < 3; k++) L.push(sel ? {t: k ? 'arbolote' : 'tacuara', x: x + q() * 10, z: NORTE - 6 - k * 9 - q() * 6, ry: q() * 6.28, s: 1.3 + q() * .5} : {t: 'cerro', x: x + q() * 10, z: NORTE - 18 - k * 26, ry: q() * 6.28, s: 2.2 + q() * 1.5 + k * .8}); }
+    for (let z = NORTE; z < -35; z += 8) { const [, e] = bordeX(z); for (let k = 0; k < 3; k++) L.push({t: q() < .3 ? 'tacuara' : 'arbolote', x: e + 4 + k * 9 + q() * 5, z: z + q() * 6, ry: q() * 6.28, s: 1.2 + q() * .5}); }
+    for (let x = -250; x < 70; x += 12) for (let k = 0; k < 2; k++) L.push({t: 'hieloB', x: x + q() * 8, z: SUR + 4 + k * 10 + q() * 4, ry: q() * 6.28, s: 2 + q() * 1.5});
     this.fueraCh = new Map(); for (const o of L) { const k = Math.floor(o.x / CH) + ',' + Math.floor(o.z / CH); (this.fueraCh.get(k) || this.fueraCh.set(k, []).get(k)).push(o); }
   }
   geo(t) {
@@ -158,7 +170,7 @@ export class Mundo3D {
   }
   // arma el decorado que se ve alrededor de (x, z)
   decorar(x, z, forzar) {
-    const cx = Math.floor(x / CH), cz = Math.floor((z - 10) / CH), clave = cx + ',' + cz;
+    const cx = Math.floor(x / CH), cz = Math.floor((z - (this.vista === 'arriba' ? 10 : 0)) / CH), clave = cx + ',' + cz;
     if (!forzar && clave === this.clave) return; this.clave = clave;
     const R = 3, lista = {}; this.vis = [];
     for (let j = cz - R; j <= cz + R; j++) for (let i = cx - R; i <= cx + R; i++) {
@@ -185,6 +197,9 @@ export class Mundo3D {
     this.sun.color.copy(u.sunC.value); this.sunI = lerp(NOCHE.sunI, DIA.sunI, dia) * (reg === 'salamanca' ? .85 : 1);
     this.hemi.color.copy(C(NOCHE.hs).lerp(C(DIA.hs), dia)); this.hemi.groundColor.copy(C(NOCHE.hg).lerp(C(P.hg), dia * .6 + .2)); this.hi = lerp(NOCHE.hi, DIA.hi, dia);
     this.scene.fog.color.copy(u.fogC.value); this.scene.fog.near = reg === 'salamanca' ? 40 : 62; this.scene.fog.far = reg === 'salamanca' ? 120 : 175;
+    if (this.vista !== 'arriba') { this.scene.fog.near = reg === 'salamanca' ? 16 : 26; this.scene.fog.far = reg === 'salamanca' ? 85 : 118; }
+    // tormenta: cielo gris, niebla más cerca y menos sol
+    const L = this.lluvia || 0; if (L > .01) { const gris = C(0x5a6270).multiplyScalar(.35 + dia * .65); for (const n of ['top', 'mid', 'hor', 'fogC']) u[n].value.lerp(gris, L * .7); this.scene.fog.color.copy(u.fogC.value); this.scene.fog.near *= 1 - .55 * L; this.scene.fog.far *= 1 - .35 * L; this.sunI *= 1 - .6 * L; this.hi *= 1 - .25 * L; }
     U.uRim.value.copy(C(NOCHE.rim).lerp(C(DIA.rim), dia)); U.uRimK.value = lerp(NOCHE.rk, DIA.rk, dia);
     this.aU.col.value.copy(dia > .5 ? C(0xfff0c0) : C(0xc8ff80)); this.aU.noche.value = 1 - dia; this.dia = dia;
   }
@@ -194,11 +209,13 @@ export class Mundo3D {
     this.u.flash.value = Math.max(0, this.u.flash.value - dt * 2.6);
     this.sun.intensity = this.sunI + this.u.flash.value * 3; this.hemi.intensity = this.hi + this.u.flash.value;
     const sx = Math.round(foco.x / 2) * 2, sz = Math.round(foco.z / 2) * 2; this.sun.target.position.set(sx, 0, sz - 6); this.sun.position.copy(this.sd).multiplyScalar(80); this.sun.position.x += sx; this.sun.position.z += sz - 6;
-    this.suelo.position.set(Math.round(foco.x / 8) * 8, 0, Math.round(foco.z / 8) * 8 - 30);
+    this.suelo.position.set(Math.round(foco.x / 8) * 8, 0, Math.round(foco.z / 8) * 8 - (this.vista === 'arriba' ? 30 : 0));
     this.aU.ctr.value.set(foco.x, 0, foco.z);
     this.lite.value.copy(this.sun.color).multiplyScalar(this.sun.intensity * .2).add(C(0xffffff).lerp(this.hemi.color, .6).multiplyScalar(this.hemi.intensity * .42));
     this.fxL.intensity *= Math.max(0, 1 - dt * 5);
-    if (Math.abs(foco.x - this.pastoC.x) > 10 || Math.abs(foco.z - this.pastoC.z) > 10) this.crecer(foco.x, foco.z);
+    if (Math.abs(foco.x - this.pastoC.x) > 10 || Math.abs(foco.z - this.pastoC.z) > 10) this.crecer(foco.x, foco.z + (this.vista === 'arriba' ? 0 : 8));
+    this.lluviaL.visible = this.lluvia > .02; this.rU.op.value = this.lluvia; if (this.cam) this.rU.ctr.value.set(this.cam.x, 0, this.cam.z);
+    if (this.lluvia > .5 && Math.random() < dt * .12) this.u.flash.value = Math.max(this.u.flash.value, .35);
     this.decorar(foco.x, foco.z);
     // tinajas rotas vuelven a los 5 minutos
     if ((this.rt = (this.rt || 0) + dt) > 5) { this.rt = 0; const now = performance.now(); let ch = false; for (const [o, tt] of this.rotos) if (now - tt > 300e3) { this.rotos.delete(o); ch = true; } if (ch) this.decorar(foco.x, foco.z, true); }

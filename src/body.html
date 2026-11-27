@@ -64,6 +64,12 @@ input,select{font:inherit;color:var(--hueso);background:rgba(0,0,0,.35);border:2
 #seg b{display:block;font-size:14px}#seg span{font-size:13px;color:var(--hueso2)}
 #jefeb{position:absolute;left:50%;top:max(12px,var(--sa-t));transform:translateX(-50%);text-align:center;width:min(520px,60vw)}
 #jefeb b{font-family:var(--disp);font-size:26px;text-shadow:0 2px 6px #000}#jefeb span{display:block;font-size:13px;color:var(--hueso2)}#jefeb .barra{width:100%;height:12px}
+#evb{position:absolute;left:50%;top:calc(max(10px,var(--sa-t)) + 6px);transform:translateX(-50%);background:rgba(14,8,22,.78);border:1px solid rgba(242,193,74,.6);border-radius:999px;padding:5px 14px;font-weight:700;font-size:14px;color:#f2e6c8;white-space:nowrap;text-shadow:0 1px 2px #000}
+#doma{position:absolute;left:50%;top:58%;transform:translateX(-50%);width:min(380px,86vw);background:rgba(14,8,22,.85);border:2px solid var(--sol);border-radius:14px;padding:10px 14px;text-align:center;display:flex;flex-direction:column;gap:7px}
+#doma b{font-family:var(--disp);font-size:22px}#doma small{color:var(--hueso2);font-size:13px}
+#doma .eq{position:relative;height:16px;border-radius:8px;background:linear-gradient(90deg,#c0392b,#e8b33d 25%,#5fd68a 42%,#5fd68a 58%,#e8b33d 75%,#c0392b)}#doma .eq i{position:absolute;top:-4px;left:50%;width:6px;height:24px;margin-left:-3px;border-radius:3px;background:#fff;box-shadow:0 0 6px #000}
+#doma .tiempo{height:6px;border-radius:3px;background:rgba(255,255,255,.15);overflow:hidden}#doma .tiempo i{display:block;height:100%;width:0;background:var(--sol)}
+body.tactil #doma small{display:none}
 #cartel{position:absolute;left:50%;top:24%;transform:translateX(-50%);text-align:center;opacity:0;pointer-events:none;width:90vw}
 #cartel h2{font-size:clamp(40px,7vw,80px);text-shadow:0 3px 0 #5a0a18,0 8px 30px rgba(0,0,0,.8)}#cartel p{margin:6px 0 0;font-size:18px;color:var(--sol);text-shadow:0 2px 6px #000}
 #cartel.ver{animation:cartel 3.6s ease forwards}@keyframes cartel{0%{opacity:0;transform:translate(-50%,10px)}12%,75%{opacity:1;transform:translate(-50%,0)}100%{opacity:0}}
@@ -109,7 +115,7 @@ body.tactil #habs{left:auto;transform:none;right:max(10px,var(--sa-r));bottom:ma
 body.tactil .hab{position:absolute;border-radius:50%;width:62px;height:62px}body.tactil .hab kbd{display:none}
 body.tactil .hab[data-b=atk]{right:0;bottom:0;width:92px;height:92px}
 body.tactil .hab[data-b=h0]{right:100px;bottom:4px}body.tactil .hab[data-b=h1]{right:86px;bottom:76px}body.tactil .hab[data-b=h2]{right:16px;bottom:102px}
-body.tactil .hab[data-b=esq]{right:172px;bottom:4px;width:54px;height:54px}body.tactil .hab[data-b=mate]{right:150px;bottom:140px;width:50px;height:50px}
+body.tactil .hab[data-b=esq]{right:172px;bottom:4px;width:54px;height:54px}body.tactil .hab[data-b=caballo]{right:196px;bottom:70px;width:50px;height:50px}body.tactil .hab[data-b=mate]{right:150px;bottom:140px;width:50px;height:50px}
 body.tactil #menu{bottom:auto;top:calc(max(10px,var(--sa-t)) + 200px);flex-direction:column}body.tactil #menu button{width:42px;height:42px;font-size:19px}
 body.tactil #usar{bottom:calc(max(14px,var(--sa-b)) + 218px);left:auto;right:max(10px,var(--sa-r));transform:none}body.tactil #usar kbd{display:none}
 body.tactil #chatlog{bottom:calc(max(14px,var(--sa-b)) + 130px)}
@@ -121,11 +127,13 @@ body.tactil #chatlog{bottom:calc(max(14px,var(--sa-b)) + 130px)}
  <div id="yo"><img id="cara" alt=""><div><b id="nom2"></b><span id="niv"></span> <span id="oro"></span><div class="barra" id="vida"><i></i><span></span></div><div class="barra" id="xpb"><i></i></div></div></div>
  <div id="der"><canvas id="mini" width="150" height="150" aria-label="Mapa chico: tocá para abrir el mapa"></canvas><div id="zona"><b></b><span></span></div><div id="reloj"></div><div id="red"></div></div>
  <div id="seg"></div>
+ <div id="evb" hidden></div>
+ <div id="doma" hidden><b>¡Aguantá al bagual!</b><div class="eq"><i></i></div><div class="tiempo"><i></i></div><small>Usá ← → (A y D, o el joystick) para no caerte</small></div>
  <div id="jefeb" hidden><b></b><span></span><div class="barra"><i></i></div></div>
  <div id="cartel"></div>
  <div id="habs"></div>
  <button id="usar" data-b="usar" hidden></button>
- <div id="menu"><button id="bmapa" aria-label="Mapa (M)" title="Mapa (M)">🗺</button><button id="binv" aria-label="Inventario (I)" title="Inventario (I)">🎒</button><button id="bmis" aria-label="Misiones (L)" title="Misiones (L)">📜</button><button id="bchat" aria-label="Chat (Enter)" title="Chat (Enter)">💬</button><button id="bop" aria-label="Opciones (Esc)" title="Opciones (Esc)">⚙</button></div>
+ <div id="menu"><button id="bcam" data-b="cam" aria-label="Cambiar cámara (V)" title="Cambiar cámara (V)">👁</button><button id="bmapa" aria-label="Mapa (M)" title="Mapa (M)">🗺</button><button id="binv" aria-label="Inventario (I)" title="Inventario (I)">🎒</button><button id="bmis" aria-label="Misiones (L)" title="Misiones (L)">📜</button><button id="bchat" aria-label="Chat (Enter)" title="Chat (Enter)">💬</button><button id="bop" aria-label="Opciones (Esc)" title="Opciones (Esc)">⚙</button></div>
  <div id="chatlog" aria-live="polite"></div><input id="chatin" hidden maxlength="90" placeholder="Escribí y apretá Enter" autocomplete="off">
 </div>
 <div id="caido" hidden></div>

@@ -46,6 +46,22 @@ for (const r of RELIQUIAS) {
     pide: `Usted busca las reliquias, ¿no? La de acá la tiene ${BOSSES[R.jefe].n}. ${BOSSES[R.jefe].d} Lo encuentra en ${G.n}. Vaya con nivel ${lv[1]}, por lo menos.`,
     fin: `¡${RELIQ[r].n}! Que Dios lo acompañe en lo que sigue.`, premio: {xp: Math.round(xpSig(lv[1]) * .6), oro: 90 * lv[1], it: [['asado', 2], ['retazo', 6]]}});
 }
+// ---------- cosas que pasan en el mundo ----------
+M('v_doma', {de: 'pampa:cantor', n: 'El bagual overo', reg: 'pampa', obj: {tipo: 'evento', ev: 'doma', n: 1},
+  pide: 'Por el campo andan baguales que nunca tuvieron dueño. Acérquese despacito, apriete F y aguante arriba hasta que se canse. Si lo doma, va a cruzar la pampa en un suspiro. Y lo llama con un silbido (G).',
+  fin: '¡Ese es un jinete! Ahora sí que no lo alcanza nadie.', premio: {xp: 120, oro: 50, it: [['mate', 2]]}});
+M('v_luz', {de: 'pampa:baqueano', req: ['c1_pampa'], n: 'La Luz Mala', reg: 'pampa', obj: {tipo: 'evento', ev: 'tesoro', n: 1},
+  pide: 'Mi abuelo decía que la Luz Mala es el alma de un difunto que dejó plata enterrada. De noche, si ve una luz verde que se mueve sola, sígala. Va a escaparse unas cuantas veces, pero al final se hunde en la tierra: cave ahí.',
+  fin: '¡Así que era cierto! Guárdese esa plata vieja, que trae suerte.', premio: {xp: 260, oro: 60, am: 'pata'}});
+M('v_malon', {de: 'ibera:baqueano', n: 'Cuando viene el malón', reg: 'ibera', obj: {tipo: 'evento', ev: 'malon', n: 1},
+  pide: 'Cada tanto las leyendas se juntan y atacan un pueblo entero. Si escucha que se viene un malón, no lo deje solo: aguante las tres oleadas junto al fogón.',
+  fin: 'Lo vi pelear desde acá. El pueblo no se va a olvidar.', premio: {xp: 420, oro: 160, it: [['asado', 2]]}});
+M('v_estrellas', {de: 'monte:cantor', n: 'Deseos de estrella', reg: 'monte', obj: {tipo: 'evento', ev: 'estrella', n: 3},
+  pide: 'En las noches claras a veces llueven estrellas. Las que caen quedan brillando en el piso un ratito. Junte tres y pida un deseo por cada una.',
+  fin: '¿Y qué pidió? No, no me diga, que no se cumple.', premio: {xp: 520, oro: 120, am: 'luna'}});
+M('v_carreta', {de: 'cuyo:vecino', n: 'El mercachifle andariego', reg: 'cuyo', obj: {tipo: 'evento', ev: 'carreta', n: 1},
+  pide: 'Por los caminos anda la carreta de un mercachifle que trae cosas de todos lados. Si la ve, párela y cómprele algo. Dicen que tiene amuletos que no se consiguen.',
+  fin: 'Buen ojo para las compras. Tome, para que siga gastando.', premio: {xp: 600, oro: 200}});
 // ---------- qué dice cada uno ----------
 const SALUDO = {
   pulpero: ['¡Buenas! Pase, que hay de todo.', 'Mate, asado, caña... lo que necesite para el camino.'],
@@ -87,13 +103,17 @@ export class Misiones {
     }
     this.ui.seguimiento();
   }
+  alEvento(k) { for (const m of this.activas()) { const s = this.p.mis[m.id]; if (s.e === 'activa' && m.obj.tipo === 'evento' && m.obj.ev === k) { s.n++; this.revisar(m); } } this.ui.seguimiento(); }
   texto(m) { const s = this.p.mis[m.id], o = m.obj, n = s?.n || 0; if (s?.e === 'lista') return 'Volvé a hablar con quien te la dio';
+    if (o.tipo === 'evento') return {doma: 'Domá un bagual (F cerca de un caballo suelto)', tesoro: 'De noche, seguí a la Luz Mala y cavá su entierro', malon: 'Defendé un pueblo de un malón', estrella: `${Math.min(n, o.n)} de ${o.n} estrellas fugaces`, carreta: 'Comprale algo a la carreta del mercachifle'}[o.ev] || '';
     if (o.tipo === 'matar') return `${Math.min(n, o.n)} de ${o.n}: ${o.bichos.map(nB).join(', ')}`; if (o.tipo === 'jefe') return o.reg === 'salamanca' ? 'Vencé a Mandinga en la Salamanca' : `Vencé a ${BOSSES[REG[o.reg].jefe].n}`;
     if (o.tipo === 'reliquias') return `${n} de 8 reliquias`; if (o.tipo === 'campeon') return `Vencé a un campeón dorado de ${REG[o.reg].n}`; return ''; }
   // a dónde ir
   destino(m) {
     const s = this.p.mis[m.id]; if (s?.e === 'lista') { const [r] = m.de.split(':'); const P = REG[r].pueblo; return {x: P.x, z: P.z, n: P.n}; }
-    const o = m.obj; if (o.tipo === 'jefe') { const g = GUARIDAS.find(g => g.reg === o.reg); return {x: g.x, z: g.z, n: g.n}; }
+    const o = m.obj;
+    if (o.tipo === 'evento') { const J = this.ui.juego, y = J.yo; if (o.ev === 'doma' && y) { let best = null, bd = 1e9; for (const a of J.vida.anim) if (a.bagual) { const d = Math.hypot(a.x - y.x, a.z - y.z); if (d < bd) { bd = d; best = a; } } if (best) return {x: best.x, z: best.z, n: 'Un bagual'}; } const R = REG[m.reg]; return {x: R.c[0], z: R.c[1], n: o.ev === 'doma' ? 'Baguales por ' + R.n : 'Andá atento'}; }
+    if (o.tipo === 'jefe') { const g = GUARIDAS.find(g => g.reg === o.reg); return {x: g.x, z: g.z, n: g.n}; }
     if (o.tipo === 'reliquias') { const r = RELIQUIAS.find(r => !this.p.reliq[r]); if (!r) return {x: SALA.puerta.x, z: SALA.puerta.z, n: 'La puerta de la Salamanca'}; const P = REG[r].pueblo; return {x: P.x, z: P.z, n: P.n}; }
     // cacerías: el campamento más cercano que tenga esos bichos (o un campeón, si es lo que se busca)
     const y = this.ui.juego.yo; let best = null, bd = 1e9;
